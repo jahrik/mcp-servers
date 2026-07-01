@@ -44,6 +44,11 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
 
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if os.environ.get("MCP_GITHUB_ALLOW_WRITE") != "1":
+            raise RuntimeError(
+                "Write operations are disabled. Set MCP_GITHUB_ALLOW_WRITE=1 to enable."
+            )
+
         sig = inspect.signature(func)
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
@@ -64,9 +69,8 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
             return func(*args, **kwargs)
         except Exception as e:
             success = False
-            from mcp_servers._common.gh import GhError
 
-            stderr = str(e) if isinstance(e, GhError) else repr(e)
+            stderr = getattr(e, "stderr", str(e))
             raise
         finally:
             end_time = datetime.now(UTC)

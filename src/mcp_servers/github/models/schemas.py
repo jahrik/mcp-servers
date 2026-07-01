@@ -179,7 +179,7 @@ class ApiGetArgs(BaseModel, frozen=True):
     )
 
 
-class GraphqlQueryArgs(BaseModel, frozen=True):
+class ApiGraphqlArgs(BaseModel, frozen=True):
     query: str = Field(description="The GraphQL query string.")
     variables: dict[str, typing.Any] | None = Field(
         None, description="Optional variables dictionary."

@@ -10,8 +10,8 @@ from pytest_mock import MockerFixture
 
 from mcp_servers.github.models.schemas import (
     ApiGetArgs,
+    ApiGraphqlArgs,
     FileGetArgs,
-    GraphqlQueryArgs,
     IssueArgs,
     IssueCommentArgs,
     IssueCreateArgs,
@@ -37,8 +37,8 @@ from mcp_servers.github.models.schemas import (
 from mcp_servers.github.server import main
 from mcp_servers.github.tools import (
     gh_api_get,
+    gh_api_graphql,
     gh_file_get,
-    gh_graphql_query,
     gh_issue_comment,
     gh_issue_create,
     gh_issue_get,
@@ -67,9 +67,12 @@ from mcp_servers.github.tools import (
 
 
 @pytest.fixture(autouse=True)
-def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
+def mock_mcp_dir(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, tmp_path: pathlib.Path
+) -> None:
     """Ensure no test writes to the real ~/.mcp directory."""
     mocker.patch("os.path.expanduser", return_value=str(tmp_path / ".mcp"))
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
 
 
 def test_list_repos(mocker: MockerFixture) -> None:
@@ -471,6 +474,22 @@ def test_resolve_review_thread(mocker: MockerFixture) -> None:
     assert any(a.startswith("query=") and "resolveReviewThread" in a for a in args)
 
 
+def test_review_comment_reply_rejects_at(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Body cannot start with '@'"):
+        gh_review_comment_reply(
+            ReviewCommentReplyArgs(repo="owner/repo", pr=42, comment_id=999, body=" @file.txt")
+        )
+
+
+def test_review_thread_resolve_rejects_at(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Thread ID cannot start with '@'"):
+        gh_review_thread_resolve(ReviewThreadResolveArgs(thread_id=" @evil"))
+
+
 def test_list_runs(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch(
         "mcp_servers.github.tools.actions.run_gh", return_value="mock list runs"
@@ -553,8 +572,8 @@ def test_graphql_query(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch(
         "mcp_servers.github.tools.api.run_gh", return_value="mock graphql query"
     )
-    result = gh_graphql_query(
-        GraphqlQueryArgs(jq_filter=".data.viewer.login", query="query { viewer { login } }")
+    result = gh_api_graphql(
+        ApiGraphqlArgs(jq_filter=".data.viewer.login", query="query { viewer { login } }")
     )
     assert result == "mock graphql query"
     mock_run_gh.assert_called_once()
@@ -571,21 +590,28 @@ def test_graphql_query_mutation(mocker: MockerFixture) -> None:
     import pytest
 
     with pytest.raises(ValueError, match="Mutations are not allowed"):
-        gh_graphql_query(GraphqlQueryArgs(query="mutation { update() }"))
+        gh_api_graphql(ApiGraphqlArgs(query="mutation { update() }"))
 
     with pytest.raises(ValueError, match="Mutations are not allowed"):
-        gh_graphql_query(GraphqlQueryArgs(query="# comment\n  mutation { update() }"))
+        gh_api_graphql(ApiGraphqlArgs(query="# comment\n  mutation { update() }"))
 
     with pytest.raises(ValueError, match="Mutations are not allowed"):
-        gh_graphql_query(GraphqlQueryArgs(query="query { viewer { login } } mutation { update() }"))
+        gh_api_graphql(ApiGraphqlArgs(query="query { viewer { login } } mutation { update() }"))
+
+
+def test_graphql_query_rejects_at(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Query cannot start with '@'"):
+        gh_api_graphql(ApiGraphqlArgs(query=" @evil.graphql"))
 
 
 def test_graphql_query_with_variables(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch(
         "mcp_servers.github.tools.api.run_gh", return_value="mock graphql query"
     )
-    result = gh_graphql_query(
-        GraphqlQueryArgs(query="query($id: ID!) { node(id: $id) { id } }", variables={"id": "abc"})
+    result = gh_api_graphql(
+        ApiGraphqlArgs(query="query($id: ID!) { node(id: $id) { id } }", variables={"id": "abc"})
     )
     assert result == "mock graphql query"
     args = mock_run_gh.call_args[0][0]
@@ -642,6 +668,14 @@ def test_audit_log_decorator_exception_in_db(mocker: MockerFixture) -> None:
     )
     assert result == "mock issue create"
     mock_run_gh.assert_called_once()
+
+
+def test_audit_log_decorator_write_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pytest
+
+    monkeypatch.delenv("MCP_GITHUB_ALLOW_WRITE", raising=False)
+    with pytest.raises(RuntimeError, match="Write operations are disabled"):
+        gh_issue_create(IssueCreateArgs(title="My Issue", body="Issue body", repo="owner/repo"))
 
 
 def test_audit_log_decorator_non_model_arg(mocker: MockerFixture) -> None:

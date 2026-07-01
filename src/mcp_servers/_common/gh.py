@@ -29,6 +29,8 @@ DEFAULT_TIMEOUT = 30
 class GhError(RuntimeError):
     """Raised when the `gh` CLI is missing or a command fails."""
 
+    stderr: str
+
 
 def validate_repo(repo: str) -> str:
     """Return `repo` if it is a well-formed ``owner/name`` slug, else raise."""
@@ -91,6 +93,8 @@ def run_gh(args: list[str], *, timeout: int = DEFAULT_TIMEOUT) -> str:
         elif "could not resolve to a node" in stderr_lower:
             hint = "\nHint: Thread or comment not found, or not resolvable. Verify the thread ID."
 
-        raise GhError(f"`gh {' '.join(args)}` failed: {stderr}{hint}")
+        err = GhError(f"`gh {' '.join(args)}` failed: {stderr}{hint}")
+        err.stderr = stderr
+        raise err
 
     return proc.stdout

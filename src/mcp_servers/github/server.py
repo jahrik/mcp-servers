@@ -5,9 +5,9 @@ work — reads plus a narrow set of writes — rather than the full GitHub API
 surface. Every tool shells out to `gh`, so it authenticates with your existing
 `gh auth login` session and needs no token.
 
-Writes are added deliberately, one tool at a time (currently the PR review-thread
-loop: reply, resolve). The server never merges a PR or pushes to a default
-branch — those stay out by design.
+Writes are added deliberately, one tool at a time, and are audit-logged to a local
+SQLite database. Write operations are disabled by default and must be explicitly
+enabled by setting `MCP_GITHUB_ALLOW_WRITE=1`.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ mcp.tool()(tools.gh_review_threads_get)
 mcp.tool()(tools.gh_review_comment_reply)
 mcp.tool()(tools.gh_review_thread_resolve)
 mcp.tool()(tools.gh_api_get)
-mcp.tool()(tools.gh_graphql_query)
+mcp.tool()(tools.gh_api_graphql)
 
 
 def main() -> None:

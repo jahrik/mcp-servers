@@ -6,8 +6,8 @@ from mcp_servers._common import run_gh, validate_ref, validate_repo
 
 from ..models.schemas import (
     ApiGetArgs,
+    ApiGraphqlArgs,
     FileGetArgs,
-    GraphqlQueryArgs,
     SearchCodeArgs,
     SearchIssuesArgs,
     SearchPrsArgs,
@@ -117,15 +117,17 @@ def gh_api_get(args: ApiGetArgs) -> str:
     return run_gh(cmd_args)
 
 
-def gh_graphql_query(args: GraphqlQueryArgs) -> str:
+def gh_api_graphql(args: ApiGraphqlArgs) -> str:
     """Make a read-only GraphQL query to the GitHub API.
 
     Args:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
+    if args.query.lstrip().startswith("@"):
+        raise ValueError("Query cannot start with '@'")
     if re.search(r"\bmutation\b", args.query, re.IGNORECASE):
-        raise ValueError("Mutations are not allowed in gh_graphql_query")
+        raise ValueError("Mutations are not allowed in gh_api_graphql")
     query = args.query
     jq_filter = args.jq_filter
     cmd_args = ["api", "graphql", "-f", f"query={query}"]

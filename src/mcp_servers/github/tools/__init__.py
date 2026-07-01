@@ -3,8 +3,8 @@ from __future__ import annotations
 from .actions import gh_run_failed_logs, gh_run_get, gh_run_list
 from .api import (
     gh_api_get,
+    gh_api_graphql,
     gh_file_get,
-    gh_graphql_query,
     gh_search_code,
     gh_search_issues,
     gh_search_prs,
@@ -30,8 +30,8 @@ from .reviews import (
 
 __all__ = [
     "gh_api_get",
+    "gh_api_graphql",
     "gh_file_get",
-    "gh_graphql_query",
     "gh_issue_comment",
     "gh_issue_create",
     "gh_issue_get",

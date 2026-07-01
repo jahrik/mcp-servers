@@ -133,6 +133,8 @@ def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
     pr = args.pr
     comment_id = args.comment_id
     body = args.body
+    if body.lstrip().startswith("@"):
+        raise ValueError("Body cannot start with '@'")
     validate_repo(repo)
     return run_gh(
         [
@@ -154,6 +156,8 @@ def gh_review_thread_resolve(args: ReviewThreadResolveArgs) -> str:
         thread_id: The review thread node id from ``gh_review_threads_get``.
     """
     thread_id = args.thread_id
+    if thread_id.lstrip().startswith("@"):
+        raise ValueError("Thread ID cannot start with '@'")
     return run_gh(
         [
             "api",
