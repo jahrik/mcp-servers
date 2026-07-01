@@ -1,12 +1,13 @@
-"""A small, read-only GitHub MCP server.
+"""A small, curated GitHub MCP server.
 
-Exposes a curated handful of read operations — the things an agent actually
-reaches for during code work — rather than the full GitHub API surface. Every
-tool shells out to `gh`, so it authenticates with your existing `gh auth login`
-session and needs no token.
+Exposes the handful of operations an agent actually reaches for during code
+work — reads plus a narrow set of writes — rather than the full GitHub API
+surface. Every tool shells out to `gh`, so it authenticates with your existing
+`gh auth login` session and needs no token.
 
-Add write operations (open PR, comment) deliberately, as separate tools, if and
-when you want them — keeping the default surface read-only is the point.
+Writes are added deliberately, one tool at a time (currently the PR review-thread
+loop: reply, resolve). The server never merges a PR or pushes to a default
+branch — those stay out by design.
 """
 
 from __future__ import annotations
@@ -137,6 +138,142 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
         validate_repo(repo)
         args += ["--repo", repo]
     return run_gh(args)
+
+
+# --- Review threads: read -> reply -> resolve --------------------------------
+# The review loop (handle Copilot's inline comments on a PR): read the comments,
+# reply to one, mark its thread resolved. Replies use REST; reading threads and
+# resolving them need GraphQL (REST can't resolve a thread). `resolve` needs a
+# thread node id, which the caller gets from `get_review_threads` — so the four
+# tools are one read -> respond -> resolve loop.
+
+# Project the inline-comment fields the review loop actually needs, so output
+# stays lean (raw `gh api` comment objects carry dozens of fields).
+_REVIEW_COMMENT_JQ = ".[] | {id, author: .user.login, path, line: (.line // .original_line), body}"
+
+# Read every review thread on a PR with its node id (needed to resolve), its
+# resolved/outdated state, and the comments it contains (databaseId ties a
+# thread back to a REST comment id from `list_review_comments`).
+_THREADS_QUERY = """
+query($owner:String!,$name:String!,$pr:Int!){
+  repository(owner:$owner,name:$name){
+    pullRequest(number:$pr){
+      reviewThreads(first:100){
+        nodes{
+          id
+          isResolved
+          isOutdated
+          comments(first:100){
+            nodes{ databaseId author{login} path line body }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+_RESOLVE_MUTATION = """
+mutation($threadId:ID!){
+  resolveReviewThread(input:{threadId:$threadId}){ thread{ id isResolved } }
+}
+"""
+
+
+@mcp.tool()
+def list_review_comments(repo: str, pr: int) -> str:
+    """List a PR's inline review comments (read-only).
+
+    Returns one JSON object per comment with the ``id`` (needed to reply),
+    author, ``path``, ``line``, and body.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+    """
+    validate_repo(repo)
+    return run_gh(
+        [
+            "api",
+            f"repos/{repo}/pulls/{int(pr)}/comments",
+            "--paginate",
+            "--jq",
+            _REVIEW_COMMENT_JQ,
+        ]
+    )
+
+
+@mcp.tool()
+def get_review_threads(repo: str, pr: int) -> str:
+    """List a PR's review threads with ids and resolved state (read-only).
+
+    Each thread carries its node ``id`` (pass to ``resolve_review_thread``), its
+    ``isResolved``/``isOutdated`` state, and the comments in it (each with a
+    ``databaseId`` matching a ``list_review_comments`` id).
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+    """
+    validate_repo(repo)
+    owner, _, name = repo.partition("/")
+    return run_gh(
+        [
+            "api",
+            "graphql",
+            "-f",
+            f"owner={owner}",
+            "-f",
+            f"name={name}",
+            "-F",
+            f"pr={int(pr)}",
+            "-f",
+            f"query={_THREADS_QUERY}",
+        ]
+    )
+
+
+@mcp.tool()
+def reply_review_comment(repo: str, pr: int, comment_id: int, body: str) -> str:
+    """Reply to a PR inline review comment's thread (write).
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+        comment_id: The review comment id to reply to (from
+            ``list_review_comments``).
+        body: Reply text.
+    """
+    validate_repo(repo)
+    return run_gh(
+        [
+            "api",
+            "-X",
+            "POST",
+            f"repos/{repo}/pulls/{int(pr)}/comments/{int(comment_id)}/replies",
+            "-f",
+            f"body={body}",
+        ]
+    )
+
+
+@mcp.tool()
+def resolve_review_thread(thread_id: str) -> str:
+    """Resolve a PR review thread by its node id (write).
+
+    Args:
+        thread_id: The review thread node id from ``get_review_threads``.
+    """
+    return run_gh(
+        [
+            "api",
+            "graphql",
+            "-f",
+            f"threadId={thread_id}",
+            "-f",
+            f"query={_RESOLVE_MUTATION}",
+        ]
+    )
 
 
 def main() -> None:

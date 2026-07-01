@@ -12,7 +12,7 @@ script. One repo, one CI, one release — shared plumbing in `_common/`.
 
 | Server   | Script       | What it does                                              |
 | -------- | ------------ | --------------------------------------------------------- |
-| `github` | `mcp-github` | Read-only GitHub access (PRs, issues, files, code search) |
+| `github` | `mcp-github` | GitHub access (PRs, issues, files, code search, review threads) |
 
 ### `github`
 
@@ -20,9 +20,12 @@ A read-only GitHub server backed by the **`gh` CLI**. Because it shells out to `
 **reuses your existing `gh auth login` session** — no Personal Access Token, no secret in
 any config file, no OAuth flow. If `gh` is logged in, the server works.
 
-Tools: `list_prs`, `get_pr`, `pr_diff`, `list_issues`, `get_issue`, `get_file`,
-`search_code`. Write operations are intentionally omitted; add them as explicit tools if
-you need them.
+Read tools: `list_prs`, `get_pr`, `pr_diff`, `list_issues`, `get_issue`, `get_file`,
+`search_code`, `list_review_comments`, `get_review_threads`.
+
+Write tools: `reply_review_comment`, `resolve_review_thread` — the PR review-thread loop
+(read a PR's inline comments, reply, resolve the thread). Write tools are added
+deliberately, one at a time; the server never merges a PR or pushes to a default branch.
 
 ## Install
 
