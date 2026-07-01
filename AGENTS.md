@@ -14,7 +14,7 @@ under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
 ```
 src/mcp_servers/
 ├── _common/          # shared helpers (gh runner, input validation) — reuse, don't copy
-├── github/           # read-only GitHub server (gh-backed) → mcp-github
+├── github/           # GitHub server (gh-backed) → mcp-github
 └── <next>/           # future servers live here
 tests/
 .github/workflows/ci.yml
@@ -34,13 +34,14 @@ tests/
   Never write a secret to a file; reuse the underlying tool's existing auth
   (e.g. `github` inherits `gh auth login`).
 - **No secrets, no hardcoded hosts/IPs** — same rules as the rest of the ecosystem.
+- **Prefer MCP servers over raw CLI:** AI agents should prefer using the tools provided by the `mcp-github` server over executing raw `gh` commands, as raw CLI usage might fail due to insufficient permissions.
 
 ## Adding a server
 
-1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")`, `@mcp.tool()` functions,
-   and `def main(): mcp.run()`.
-2. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
-3. Reuse/extend `_common`; add tests under `tests/`; update the README server table.
+1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")` entry point and `def main(): mcp.run()`.
+2. For small servers, put `@mcp.tool()` functions directly in `server.py`. For larger servers, extract logic into a `tools/` directory and register them in `server.py`.
+3. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
+4. Reuse/extend `_common`; add tests under `tests/`; update the README server table.
 
 ## Commands
 

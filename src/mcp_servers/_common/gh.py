@@ -29,6 +29,8 @@ DEFAULT_TIMEOUT = 30
 class GhError(RuntimeError):
     """Raised when the `gh` CLI is missing or a command fails."""
 
+    stderr: str
+
 
 def validate_repo(repo: str) -> str:
     """Return `repo` if it is a well-formed ``owner/name`` slug, else raise."""
@@ -68,6 +70,31 @@ def run_gh(args: list[str], *, timeout: int = DEFAULT_TIMEOUT) -> str:
 
     if proc.returncode != 0:
         stderr = proc.stderr.strip() or proc.stdout.strip() or "(no output)"
-        raise GhError(f"`gh {' '.join(args)}` failed: {stderr}")
+        hint = ""
+        stderr_lower = stderr.lower()
+        if "could not resolve to a repository" in stderr_lower or "not found" in stderr_lower:
+            if "could not resolve to a repository" in stderr_lower:
+                hint = (
+                    "\nHint: Repository not found. Use gh_repo_list to find the correct "
+                    "repository name."
+                )
+            elif "branch" in stderr_lower or "revision" in stderr_lower:
+                hint = (
+                    "\nHint: Branch or ref not found. Use gh_repo_get or "
+                    "gh_run_list to verify branches/refs."
+                )
+            else:
+                hint = "\nHint: Resource not found. Verify repository and arguments."
+        elif "is not mergeable" in stderr_lower:
+            hint = (
+                "\nHint: PR is not mergeable. Check gh_pr_checks for failures or "
+                "gh_pr_diff for conflicts."
+            )
+        elif "could not resolve to a node" in stderr_lower:
+            hint = "\nHint: Thread or comment not found, or not resolvable. Verify the thread ID."
+
+        err = GhError(f"`gh {' '.join(args)}` failed: {stderr}{hint}")
+        err.stderr = stderr
+        raise err
 
     return proc.stdout

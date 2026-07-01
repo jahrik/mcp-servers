@@ -16,17 +16,9 @@ script. One repo, one CI, one release — shared plumbing in `_common/`.
 
 ### `github`
 
-A read-only GitHub server backed by the **`gh` CLI**. Because it shells out to `gh`, it
-**reuses your existing `gh auth login` session** — no Personal Access Token, no secret in
-any config file, no OAuth flow. If `gh` is logged in, the server works.
+A GitHub server backed by the **`gh` CLI**. Reuses your existing `gh auth login` session to provide robust access to PRs, issues, files, code search, and review threads.
 
-Read tools: `list_prs`, `get_pr`, `pr_diff`, `list_issues`, `get_issue`, `get_file`,
-`search_code`, `list_review_comments`, `get_review_threads`. The two review-read tools
-take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review.
-
-Write tools: `reply_review_comment`, `resolve_review_thread` — the PR review-thread loop
-(read a PR's inline comments, reply, resolve the thread). Write tools are added
-deliberately, one at a time; the server never merges a PR or pushes to a default branch.
+[Read the detailed `github` server documentation](docs/github.md).
 
 ## Install
 
@@ -68,11 +60,19 @@ uvx pre-commit run --all-files   # every gate, as CI runs it
 
 ### Adding a server
 
-1. Create `src/mcp_servers/<name>/server.py` with a `FastMCP` instance, `@mcp.tool()`
-   functions, and a `main()` that calls `mcp.run()`.
+1. Create `src/mcp_servers/<name>/server.py` with a `FastMCP` instance and a `main()` that calls `mcp.run()`.
+   - For small servers, define `@mcp.tool()` functions directly in `server.py`.
+   - For larger servers (like `github`), organize tools into a `tools/` module and import/register them in `server.py`.
 2. Reuse shared helpers from `mcp_servers._common` (add new ones there, not per-server).
 3. Add the console script under `[project.scripts]` in `pyproject.toml`.
 4. Add tests under `tests/` and a row to the table above.
+
+### Versioning & Releases
+
+This project uses `hatch-vcs` for dynamic versioning driven by Git tags. To create a new release:
+1. Create a lightweight tag: `git tag v1.0.0`
+2. Push the tag: `git push origin v1.0.0`
+The package version will automatically be set to the tag name during build or installation.
 
 ## License
 

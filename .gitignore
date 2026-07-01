@@ -11,3 +11,8 @@ dist/
 # tooling caches
 .pytest_cache/
 .ruff_cache/
+
+# local
+TODO.md
+pr.md
+.coverage
