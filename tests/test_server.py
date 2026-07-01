@@ -70,6 +70,7 @@ def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
 
 def test_list_repos(mocker: MockerFixture) -> None:
     import mcp_servers.github.server
+
     mcp_servers.github.server._CACHE.clear()
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
     result = gh_repo_list(RepoListArgs(limit=5, owner="owner"))
@@ -216,6 +217,7 @@ def test_merge_pr_invalid_method(mocker: MockerFixture) -> None:
 
     with pytest.raises(ValueError, match="Invalid merge method"):
         gh_pr_merge(PrMergeArgs(merge_method="invalid", repo="owner/repo", pr=123, confirm=True))
+
 
 def test_merge_pr_unconfirmed(mocker: MockerFixture) -> None:
     import pytest

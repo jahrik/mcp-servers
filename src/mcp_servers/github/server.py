@@ -67,6 +67,7 @@ _REPO_FIELDS = (
 
 _CACHE: dict[str, tuple[float, Any]] = {}
 
+
 def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
     def wrapper(args: Any) -> Any:
@@ -84,6 +85,7 @@ def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
         result = func(args)
         _CACHE[key] = (now, result)
         return result
+
     return wrapper
 
 
