@@ -78,6 +78,11 @@ def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
             dump_args = args.model_dump(exclude={"no_cache"} if hasattr(args, "no_cache") else None)
         key = f"{getattr(func, '__name__', str(func))}:{json.dumps(dump_args, sort_keys=True)}"
         now = time.time()
+
+        expired = [k for k, (ts, _) in _CACHE.items() if now - ts >= 300]
+        for k in expired:
+            del _CACHE[k]
+
         if key in _CACHE:
             timestamp, value = _CACHE[key]
             if now - timestamp < 300:
@@ -104,7 +109,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
                 dumped_args[k] = v.model_dump()
             else:
                 dumped_args[k] = v
-        args_json = json.dumps(dumped_args)
+        args_json = json.dumps(dumped_args, default=str)
 
         start_time = datetime.now(UTC)
         success = True
@@ -773,7 +778,9 @@ def gh_graphql_query(args: GraphqlQueryArgs) -> str:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
-    if "mutation" in args.query.lower():
+    import re
+
+    if re.search(r"^\s*mutation\b", args.query, re.IGNORECASE):
         raise ValueError("Mutations are not allowed in gh_graphql_query")
     query = args.query
     jq_filter = args.jq_filter

@@ -70,8 +70,8 @@ def run_gh(args: list[str], *, timeout: int = DEFAULT_TIMEOUT) -> str:
         stderr = proc.stderr.strip() or proc.stdout.strip() or "(no output)"
         hint = ""
         stderr_lower = stderr.lower()
-        if "could not resolve to a repository" in stderr or "not found" in stderr_lower:
-            if "-R" in args or "--repo" in args or "repo" in args:
+        if "could not resolve to a repository" in stderr_lower or "not found" in stderr_lower:
+            if "could not resolve to a repository" in stderr_lower:
                 hint = (
                     "\nHint: Repository not found. Use gh_repo_list to find the correct "
                     "repository name."

@@ -558,3 +558,41 @@ def test_audit_log_decorator_non_model_arg(mocker: MockerFixture) -> None:
 
     result = dummy_tool("hello")
     assert result == "hello!"
+
+
+def test_ttl_cache_eviction(mocker: MockerFixture) -> None:
+    import mcp_servers.github.server
+
+    mcp_servers.github.server._CACHE.clear()
+
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
+
+    # 1. First call sets cache
+    mock_time = mocker.patch("mcp_servers.github.server.time.time", return_value=1000.0)
+    gh_repo_list(RepoListArgs(limit=5, owner="owner"))
+    assert mock_run_gh.call_count == 1
+
+    # 2. Second call hits cache (time = 1100.0, diff = 100 < 300)
+    mock_time.return_value = 1100.0
+    gh_repo_list(RepoListArgs(limit=5, owner="owner"))
+    assert mock_run_gh.call_count == 1
+
+    # 3. Third call is after 300s, so it should evict and call again
+    mock_time.return_value = 1400.0
+    gh_repo_list(RepoListArgs(limit=5, owner="owner"))
+    assert mock_run_gh.call_count == 2
+
+
+def test_audit_log_unserializable_arg(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
+    from mcp_servers.github.server import _audit_log
+
+    class UnserializableObject:
+        pass
+
+    @_audit_log
+    def dummy_tool(arg1: object) -> str:
+        return "done"
+
+    # Should not raise TypeError during json.dumps
+    result = dummy_tool(UnserializableObject())
+    assert result == "done"
