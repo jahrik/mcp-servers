@@ -76,6 +76,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
 
 
 @mcp.tool()
+@functools.lru_cache(maxsize=128)
 def gh_repo_list(owner: str, limit: int = 30) -> str:
     """List repositories for an owner (user or organization).
 
@@ -88,6 +89,7 @@ def gh_repo_list(owner: str, limit: int = 30) -> str:
 
 
 @mcp.tool()
+@functools.lru_cache(maxsize=128)
 def gh_repo_get(repo: str) -> str:
     """Get a single repository's metadata.
 

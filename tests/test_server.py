@@ -46,6 +46,7 @@ def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
 
 
 def test_list_repos(mocker: MockerFixture) -> None:
+    gh_repo_list.cache_clear()
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
     result = gh_repo_list("owner", limit=5)
     assert result == "mock repo list"
@@ -56,8 +57,14 @@ def test_list_repos(mocker: MockerFixture) -> None:
     assert "owner" in args
     assert "5" in args
 
+    # Second call should use cache
+    result2 = gh_repo_list("owner", limit=5)
+    assert result2 == "mock repo list"
+    mock_run_gh.assert_called_once()
+
 
 def test_get_repo(mocker: MockerFixture) -> None:
+    gh_repo_get.cache_clear()
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo view")
     result = gh_repo_get("owner/repo")
     assert result == "mock repo view"
@@ -66,6 +73,11 @@ def test_get_repo(mocker: MockerFixture) -> None:
     assert "repo" in args
     assert "view" in args
     assert "owner/repo" in args
+
+    # Second call should use cache
+    result2 = gh_repo_get("owner/repo")
+    assert result2 == "mock repo view"
+    mock_run_gh.assert_called_once()
 
 
 def test_list_prs(mocker: MockerFixture) -> None:
