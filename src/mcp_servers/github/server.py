@@ -21,6 +21,7 @@ mcp = FastMCP("github")
 # JSON field sets kept small so tool output stays readable in-context.
 _PR_FIELDS = "number,title,state,author,headRefName,baseRefName,isDraft,url,updatedAt"
 _ISSUE_FIELDS = "number,title,state,author,labels,url,updatedAt"
+_RUN_FIELDS = "databaseId,name,displayTitle,status,conclusion,headBranch,headSha,url,updatedAt"
 
 
 @mcp.tool()
@@ -138,6 +139,56 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
         validate_repo(repo)
         args += ["--repo", repo]
     return run_gh(args)
+
+
+# --- Actions / CI ------------------------------------------------------------
+
+
+@mcp.tool()
+def list_runs(repo: str, limit: int = 20) -> str:
+    """List GitHub Actions workflow runs for a repo.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        limit: Maximum number of runs to return (1-100).
+    """
+    validate_repo(repo)
+    limit = max(1, min(limit, 100))
+    return run_gh(["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS])
+
+
+@mcp.tool()
+def get_run(repo: str, run_id: int) -> str:
+    """Get details of a specific GitHub Actions workflow run.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        run_id: The run ID (databaseId).
+    """
+    validate_repo(repo)
+    return run_gh(
+        [
+            "run",
+            "view",
+            str(run_id),
+            "-R",
+            repo,
+            "--json",
+            f"{_RUN_FIELDS},jobs",
+        ]
+    )
+
+
+@mcp.tool()
+def run_failed_logs(repo: str, run_id: int) -> str:
+    """Get the failed logs for a GitHub Actions workflow run.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        run_id: The run ID (databaseId).
+    """
+    validate_repo(repo)
+    return run_gh(["run", "view", str(run_id), "-R", repo, "--log-failed"])
 
 
 # --- Review threads: read -> reply -> resolve --------------------------------
