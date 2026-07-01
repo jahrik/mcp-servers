@@ -38,10 +38,10 @@ tests/
 
 ## Adding a server
 
-1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")`, `@mcp.tool()` functions,
-   and `def main(): mcp.run()`.
-2. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
-3. Reuse/extend `_common`; add tests under `tests/`; update the README server table.
+1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")` entry point and `def main(): mcp.run()`.
+2. For small servers, put `@mcp.tool()` functions directly in `server.py`. For larger servers, extract logic into a `tools/` directory and register them in `server.py`.
+3. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
+4. Reuse/extend `_common`; add tests under `tests/`; update the README server table.
 
 ## Commands
 

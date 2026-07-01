@@ -79,8 +79,9 @@ uvx pre-commit run --all-files   # every gate, as CI runs it
 
 ### Adding a server
 
-1. Create `src/mcp_servers/<name>/server.py` with a `FastMCP` instance, `@mcp.tool()`
-   functions, and a `main()` that calls `mcp.run()`.
+1. Create `src/mcp_servers/<name>/server.py` with a `FastMCP` instance and a `main()` that calls `mcp.run()`.
+   - For small servers, define `@mcp.tool()` functions directly in `server.py`.
+   - For larger servers (like `github`), organize tools into a `tools/` module and import/register them in `server.py`.
 2. Reuse shared helpers from `mcp_servers._common` (add new ones there, not per-server).
 3. Add the console script under `[project.scripts]` in `pyproject.toml`.
 4. Add tests under `tests/` and a row to the table above.
