@@ -316,17 +316,19 @@ def search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 @mcp.tool()
 def list_runs(
-    repo: str, limit: int = 20, branch: str | None = None, workflow: str | None = None
+    repo: str, branch: str | None = None, workflow: str | None = None, limit: int = 20
 ) -> str:
     """List GitHub Actions workflow runs for a repo.
 
     Args:
         repo: Repository as ``owner/name``.
-        limit: Maximum number of runs to return (1-100).
         branch: Optional branch name to filter by.
         workflow: Optional workflow name or filename to filter by.
+        limit: Maximum number of runs to return (1-100).
     """
     validate_repo(repo)
+    if branch is not None:
+        validate_ref(branch)
     limit = max(1, min(limit, 100))
     args = ["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS]
     if branch is not None:
@@ -532,6 +534,34 @@ def resolve_review_thread(thread_id: str) -> str:
             f"query={_RESOLVE_MUTATION}",
         ]
     )
+
+
+@mcp.tool()
+def api_get(endpoint: str, jq_filter: str | None = None) -> str:
+    """Make a read-only GET request to the GitHub REST API.
+
+    Args:
+        endpoint: The API endpoint path (e.g. ``repos/owner/repo/pulls``).
+        jq_filter: Optional jq filter string to parse the response.
+    """
+    args = ["api", endpoint]
+    if jq_filter is not None:
+        args += ["--jq", jq_filter]
+    return run_gh(args)
+
+
+@mcp.tool()
+def graphql_query(query: str, jq_filter: str | None = None) -> str:
+    """Make a read-only GraphQL query to the GitHub API.
+
+    Args:
+        query: The GraphQL query string.
+        jq_filter: Optional jq filter string to parse the response.
+    """
+    args = ["api", "graphql", "-f", f"query={query}"]
+    if jq_filter is not None:
+        args += ["--jq", jq_filter]
+    return run_gh(args)
 
 
 def main() -> None:

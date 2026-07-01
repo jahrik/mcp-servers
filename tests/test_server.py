@@ -5,6 +5,7 @@ from __future__ import annotations
 from pytest_mock import MockerFixture
 
 from mcp_servers.github.server import (
+    api_get,
     create_issue,
     create_pr,
     get_file,
@@ -13,6 +14,7 @@ from mcp_servers.github.server import (
     get_repo,
     get_review_threads,
     get_run,
+    graphql_query,
     issue_comment,
     list_issues,
     list_prs,
@@ -396,6 +398,32 @@ def test_run_failed_logs(mocker: MockerFixture) -> None:
     assert "view" in args
     assert "789" in args
     assert "--log-failed" in args
+
+
+def test_api_get(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock api get")
+    result = api_get("repos/owner/repo/pulls", jq_filter=".[] | .url")
+    assert result == "mock api get"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "repos/owner/repo/pulls" in args
+    assert "--jq" in args
+    assert ".[] | .url" in args
+
+
+def test_graphql_query(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock graphql query")
+    result = graphql_query("query { viewer { login } }", jq_filter=".data.viewer.login")
+    assert result == "mock graphql query"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "graphql" in args
+    assert "-f" in args
+    assert "query=query { viewer { login } }" in args
+    assert "--jq" in args
+    assert ".data.viewer.login" in args
 
 
 def test_main(mocker: MockerFixture) -> None:
