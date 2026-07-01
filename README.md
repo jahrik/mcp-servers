@@ -86,6 +86,13 @@ uvx pre-commit run --all-files   # every gate, as CI runs it
 3. Add the console script under `[project.scripts]` in `pyproject.toml`.
 4. Add tests under `tests/` and a row to the table above.
 
+### Versioning & Releases
+
+This project uses `hatch-vcs` for dynamic versioning driven by Git tags. To create a new release:
+1. Create a lightweight tag: `git tag v1.0.0`
+2. Push the tag: `git push origin v1.0.0`
+The package version will automatically be set to the tag name during build or installation.
+
 ## License
 
 MIT
