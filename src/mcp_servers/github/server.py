@@ -22,6 +22,7 @@ mcp = FastMCP("github")
 _PR_FIELDS = "number,title,state,author,headRefName,baseRefName,isDraft,url,updatedAt"
 _ISSUE_FIELDS = "number,title,state,author,labels,url,updatedAt"
 _RUN_FIELDS = "databaseId,name,displayTitle,status,conclusion,headBranch,headSha,url,updatedAt"
+_CHECK_FIELDS = "name,state,bucket,startedAt,completedAt,link,description,workflow"
 
 
 @mcp.tool()
@@ -62,6 +63,28 @@ def pr_diff(repo: str, number: int) -> str:
     """Get the unified diff for a pull request."""
     validate_repo(repo)
     return run_gh(["pr", "diff", str(int(number)), "-R", repo])
+
+
+@mcp.tool()
+def pr_checks(repo: str, number: int) -> str:
+    """Get the status of checks for a pull request.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        number: Pull request number.
+    """
+    validate_repo(repo)
+    return run_gh(
+        [
+            "pr",
+            "checks",
+            str(int(number)),
+            "-R",
+            repo,
+            "--json",
+            _CHECK_FIELDS,
+        ]
+    )
 
 
 @mcp.tool()
@@ -145,16 +168,25 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 
 @mcp.tool()
-def list_runs(repo: str, limit: int = 20) -> str:
+def list_runs(
+    repo: str, limit: int = 20, branch: str | None = None, workflow: str | None = None
+) -> str:
     """List GitHub Actions workflow runs for a repo.
 
     Args:
         repo: Repository as ``owner/name``.
         limit: Maximum number of runs to return (1-100).
+        branch: Optional branch name to filter by.
+        workflow: Optional workflow name or filename to filter by.
     """
     validate_repo(repo)
     limit = max(1, min(limit, 100))
-    return run_gh(["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS])
+    args = ["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS]
+    if branch is not None:
+        args += ["--branch", branch]
+    if workflow is not None:
+        args += ["--workflow", workflow]
+    return run_gh(args)
 
 
 @mcp.tool()
@@ -170,7 +202,7 @@ def get_run(repo: str, run_id: int) -> str:
         [
             "run",
             "view",
-            str(run_id),
+            str(int(run_id)),
             "-R",
             repo,
             "--json",
@@ -188,7 +220,7 @@ def run_failed_logs(repo: str, run_id: int) -> str:
         run_id: The run ID (databaseId).
     """
     validate_repo(repo)
-    return run_gh(["run", "view", str(run_id), "-R", repo, "--log-failed"])
+    return run_gh(["run", "view", str(int(run_id)), "-R", repo, "--log-failed"])
 
 
 # --- Review threads: read -> reply -> resolve --------------------------------

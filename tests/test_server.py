@@ -12,10 +12,15 @@ from mcp_servers.github.server import (
     list_issues,
     list_prs,
     list_review_comments,
+    pr_checks,
     pr_diff,
     reply_review_comment,
     resolve_review_thread,
     search_code,
+    list_runs,
+    get_run,
+    run_failed_logs,
+    main,
 )
 
 
@@ -50,6 +55,17 @@ def test_pr_diff(mocker: MockerFixture) -> None:
     args = mock_run_gh.call_args[0][0]
     assert "pr" in args
     assert "diff" in args
+    assert "123" in args
+
+
+def test_pr_checks(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr checks")
+    result = pr_checks("owner/repo", 123)
+    assert result == "mock pr checks"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "checks" in args
     assert "123" in args
 
 
@@ -174,3 +190,70 @@ def test_resolve_review_thread(mocker: MockerFixture) -> None:
     assert "graphql" in args
     assert "threadId=PRRT_abc123" in args
     assert any(a.startswith("query=") and "resolveReviewThread" in a for a in args)
+
+
+def test_list_runs(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock list runs")
+    result = list_runs("owner/repo", limit=10)
+    assert result == "mock list runs"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "run" in args
+    assert "list" in args
+    assert "owner/repo" in args
+    assert "10" in args
+    assert "--branch" not in args
+    assert "--workflow" not in args
+
+
+def test_list_runs_with_filters(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock list runs filtered")
+    result = list_runs("owner/repo", limit=5, branch="main", workflow="ci.yml")
+    assert result == "mock list runs filtered"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "run" in args
+    assert "list" in args
+    assert "owner/repo" in args
+    assert "5" in args
+    assert "--branch" in args
+    assert "main" in args
+    assert "--workflow" in args
+    assert "ci.yml" in args
+
+
+def test_get_run(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock get run")
+    result = get_run("owner/repo", 789)
+    assert result == "mock get run"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "run" in args
+    assert "view" in args
+    assert "789" in args
+
+
+def test_run_failed_logs(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock logs")
+    result = run_failed_logs("owner/repo", 789)
+    assert result == "mock logs"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "run" in args
+    assert "view" in args
+    assert "789" in args
+    assert "--log-failed" in args
+
+
+def test_main(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("mcp_servers.github.server.mcp.run")
+    main()
+    mock_run.assert_called_once()
+
+
+def test_main_block(mocker: MockerFixture) -> None:
+    import runpy
+    mock_run = mocker.patch("mcp.server.fastmcp.FastMCP.run")
+    runpy.run_module("mcp_servers.github.server", run_name="__main__")
+    mock_run.assert_called_once()
+
