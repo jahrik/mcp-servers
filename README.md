@@ -16,17 +16,21 @@ script. One repo, one CI, one release — shared plumbing in `_common/`.
 
 ### `github`
 
-A read-only GitHub server backed by the **`gh` CLI**. Because it shells out to `gh`, it
+A GitHub server backed by the **`gh` CLI**. Because it shells out to `gh`, it
 **reuses your existing `gh auth login` session** — no Personal Access Token, no secret in
 any config file, no OAuth flow. If `gh` is logged in, the server works.
 
-Read tools: `list_prs`, `get_pr`, `pr_diff`, `list_issues`, `get_issue`, `get_file`,
-`search_code`, `list_review_comments`, `get_review_threads`. The two review-read tools
-take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review.
+Read tools: `gh_repo_list`, `gh_repo_get`, `gh_pr_list`, `gh_pr_get`, `gh_pr_diff`,
+`gh_pr_checks`, `gh_issue_list`, `gh_issue_get`, `gh_file_get`, `gh_search_code`,
+`gh_search_prs`, `gh_search_issues`, `gh_run_list`, `gh_run_get`, `gh_run_failed_logs`,
+`gh_review_comments_list`, `gh_review_threads_get`, `gh_api_get`, `gh_graphql_query`.
+The review-read tools take `bot_only` to keep just the Copilot/bot comments — the
+actionable ones in a review.
 
-Write tools: `reply_review_comment`, `resolve_review_thread` — the PR review-thread loop
-(read a PR's inline comments, reply, resolve the thread). Write tools are added
-deliberately, one at a time; the server never merges a PR or pushes to a default branch.
+Write tools: `gh_pr_create`, `gh_pr_comment`, `gh_pr_merge`, `gh_issue_create`,
+`gh_issue_comment`, `gh_review_comment_reply`, `gh_review_thread_resolve`.
+Every write tool invocation is recorded for accountability in a local SQLite audit log
+at `~/.mcp/audit.db`.
 
 ## Install
 
