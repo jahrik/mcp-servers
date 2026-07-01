@@ -19,6 +19,7 @@ from mcp_servers.github.models.schemas import (
     PrArgs,
     PrCommentArgs,
     PrCreateArgs,
+    PrEditArgs,
     PrListArgs,
     PrMergeArgs,
     RepoGetArgs,
@@ -46,6 +47,7 @@ from mcp_servers.github.tools import (
     gh_pr_comment,
     gh_pr_create,
     gh_pr_diff,
+    gh_pr_edit,
     gh_pr_get,
     gh_pr_list,
     gh_pr_merge,
@@ -184,6 +186,36 @@ def test_create_pr(mocker: MockerFixture) -> None:
     assert "--base" in args
     assert "main" in args
     assert "--draft" in args
+
+
+def test_pr_edit(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr edit")
+    result = gh_pr_edit(PrEditArgs(repo="owner/repo", pr=123, title="New title", body="New body"))
+    assert result == "mock pr edit"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "edit" in args
+    assert "123" in args
+    assert "owner/repo" in args
+    assert "--title" in args
+    assert "New title" in args
+    assert "--body" in args
+    assert "New body" in args
+
+
+def test_pr_edit_no_optional(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr edit")
+    result = gh_pr_edit(PrEditArgs(repo="owner/repo", pr=123))
+    assert result == "mock pr edit"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "edit" in args
+    assert "123" in args
+    assert "owner/repo" in args
+    assert "--title" not in args
+    assert "--body" not in args
 
 
 def test_pr_comment(mocker: MockerFixture) -> None:

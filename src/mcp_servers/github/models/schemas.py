@@ -36,6 +36,13 @@ class PrArgs(BaseModel, frozen=True):
     number: int = Field(description="Pull request number.")
 
 
+class PrEditArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    title: str | None = Field(None, description="Optional new title for the pull request.")
+    body: str | None = Field(None, description="Optional new body for the pull request.")
+
+
 class PrCreateArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     title: str = Field(description="Title of the pull request.")

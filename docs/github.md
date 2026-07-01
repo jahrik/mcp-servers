@@ -29,6 +29,7 @@ The review-read tools take `bot_only` to keep just the Copilot/bot comments — 
 ## Write Tools
 
 - `gh_pr_create`
+- `gh_pr_edit`
 - `gh_pr_comment`
 - `gh_pr_merge`
 - `gh_issue_create`

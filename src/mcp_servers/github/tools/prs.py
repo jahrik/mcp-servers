@@ -6,6 +6,7 @@ from ..models.schemas import (
     PrArgs,
     PrCommentArgs,
     PrCreateArgs,
+    PrEditArgs,
     PrListArgs,
     PrMergeArgs,
 )
@@ -106,6 +107,29 @@ def gh_pr_create(args: PrCreateArgs) -> str:
         cmd_args += ["--base", base]
     if draft:
         cmd_args += ["--draft"]
+    return run_gh(cmd_args)
+
+
+@_audit_log
+def gh_pr_edit(args: PrEditArgs) -> str:
+    """Edit a pull request.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+        title: Optional new title.
+        body: Optional new body.
+    """
+    repo = args.repo
+    pr = args.pr
+    title = args.title
+    body = args.body
+    validate_repo(repo)
+    cmd_args = ["pr", "edit", str(int(pr)), "-R", repo]
+    if title is not None:
+        cmd_args += ["--title", title]
+    if body is not None:
+        cmd_args += ["--body", body]
     return run_gh(cmd_args)
 
 
