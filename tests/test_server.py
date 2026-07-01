@@ -8,7 +8,7 @@ import pathlib
 import pytest
 from pytest_mock import MockerFixture
 
-from mcp_servers.github.server import (
+from mcp_servers.github.models.schemas import (
     ApiGetArgs,
     FileGetArgs,
     GraphqlQueryArgs,
@@ -32,6 +32,9 @@ from mcp_servers.github.server import (
     SearchCodeArgs,
     SearchIssuesArgs,
     SearchPrsArgs,
+)
+from mcp_servers.github.server import main
+from mcp_servers.github.tools import (
     gh_api_get,
     gh_file_get,
     gh_graphql_query,
@@ -58,7 +61,6 @@ from mcp_servers.github.server import (
     gh_search_code,
     gh_search_issues,
     gh_search_prs,
-    main,
 )
 
 
@@ -69,10 +71,12 @@ def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
 
 
 def test_list_repos(mocker: MockerFixture) -> None:
-    import mcp_servers.github.server
+    import mcp_servers.github.utils
 
-    mcp_servers.github.server._CACHE.clear()
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
+    mcp_servers.github.utils._CACHE.clear()
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.repos.run_gh", return_value="mock repo list"
+    )
     result = gh_repo_list(RepoListArgs(limit=5, owner="owner"))
     assert result == "mock repo list"
     mock_run_gh.assert_called_once()
@@ -93,7 +97,9 @@ def test_list_repos(mocker: MockerFixture) -> None:
 
 
 def test_get_repo(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo view")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.repos.run_gh", return_value="mock repo view"
+    )
     result = gh_repo_get(RepoGetArgs(repo="owner/repo"))
     assert result == "mock repo view"
     mock_run_gh.assert_called_once()
@@ -107,7 +113,7 @@ def test_get_repo(mocker: MockerFixture) -> None:
 
 
 def test_list_prs(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr list")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr list")
     result = gh_pr_list(PrListArgs(state="open", limit=5, repo="owner/repo"))
     assert result == "mock pr list"
     mock_run_gh.assert_called_once()
@@ -119,7 +125,7 @@ def test_list_prs(mocker: MockerFixture) -> None:
 
 
 def test_get_pr(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr output")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr output")
     result = gh_pr_get(PrArgs(repo="owner/repo", number=123))
     assert result == "mock pr output"
     mock_run_gh.assert_called_once()
@@ -130,7 +136,7 @@ def test_get_pr(mocker: MockerFixture) -> None:
 
 
 def test_pr_diff(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr diff")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr diff")
     result = gh_pr_diff(PrArgs(repo="owner/repo", number=123))
     assert result == "mock pr diff"
     mock_run_gh.assert_called_once()
@@ -141,7 +147,7 @@ def test_pr_diff(mocker: MockerFixture) -> None:
 
 
 def test_pr_checks(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr checks")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr checks")
     result = gh_pr_checks(PrArgs(repo="owner/repo", number=123))
     assert result == "mock pr checks"
     mock_run_gh.assert_called_once()
@@ -152,7 +158,7 @@ def test_pr_checks(mocker: MockerFixture) -> None:
 
 
 def test_create_pr(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr create")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr create")
     result = gh_pr_create(
         PrCreateArgs(
             title="My PR",
@@ -181,7 +187,9 @@ def test_create_pr(mocker: MockerFixture) -> None:
 
 
 def test_pr_comment(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr comment")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.prs.run_gh", return_value="mock pr comment"
+    )
     result = gh_pr_comment(PrCommentArgs(repo="owner/repo", pr=123, body="LGTM!"))
     assert result == "mock pr comment"
     mock_run_gh.assert_called_once()
@@ -195,7 +203,7 @@ def test_pr_comment(mocker: MockerFixture) -> None:
 
 
 def test_merge_pr(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr merge")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.prs.run_gh", return_value="mock pr merge")
     result = gh_pr_merge(
         PrMergeArgs(
             merge_method="rebase", delete_branch=True, repo="owner/repo", pr=123, confirm=True
@@ -227,7 +235,7 @@ def test_merge_pr_unconfirmed(mocker: MockerFixture) -> None:
 
 
 def test_list_issues(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issues")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.issues.run_gh", return_value="mock issues")
     result = gh_issue_list(IssueListArgs(state="closed", limit=10, repo="owner/repo"))
     assert result == "mock issues"
     mock_run_gh.assert_called_once()
@@ -239,7 +247,9 @@ def test_list_issues(mocker: MockerFixture) -> None:
 
 
 def test_get_issue(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue output")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.issues.run_gh", return_value="mock issue output"
+    )
     result = gh_issue_get(IssueArgs(repo="owner/repo", number=456))
     assert result == "mock issue output"
     mock_run_gh.assert_called_once()
@@ -250,7 +260,9 @@ def test_get_issue(mocker: MockerFixture) -> None:
 
 
 def test_create_issue(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.issues.run_gh", return_value="mock issue create"
+    )
     result = gh_issue_create(
         IssueCreateArgs(title="My Issue", body="Issue body", repo="owner/repo")
     )
@@ -268,7 +280,7 @@ def test_create_issue(mocker: MockerFixture) -> None:
 
 def test_issue_comment(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch(
-        "mcp_servers.github.server.run_gh", return_value="mock issue comment"
+        "mcp_servers.github.tools.issues.run_gh", return_value="mock issue comment"
     )
     result = gh_issue_comment(IssueCommentArgs(repo="owner/repo", issue=456, body="Fixing this"))
     assert result == "mock issue comment"
@@ -283,7 +295,9 @@ def test_issue_comment(mocker: MockerFixture) -> None:
 
 
 def test_get_file(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock file content")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.api.run_gh", return_value="mock file content"
+    )
     result = gh_file_get(FileGetArgs(ref="main", repo="owner/repo", path="path/to/file.py"))
     assert result == "mock file content"
     mock_run_gh.assert_called_once()
@@ -294,7 +308,7 @@ def test_get_file(mocker: MockerFixture) -> None:
 
 
 def test_search_code(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock results")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.api.run_gh", return_value="mock results")
     result = gh_search_code(SearchCodeArgs(repo="owner/repo", limit=50, query="def foo"))
     assert result == "mock results"
     mock_run_gh.assert_called_once()
@@ -307,7 +321,9 @@ def test_search_code(mocker: MockerFixture) -> None:
 
 
 def test_search_prs(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr results")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.api.run_gh", return_value="mock pr results"
+    )
     result = gh_search_prs(SearchPrsArgs(repo="owner/repo", limit=50, query="is:open"))
     assert result == "mock pr results"
     mock_run_gh.assert_called_once()
@@ -321,7 +337,7 @@ def test_search_prs(mocker: MockerFixture) -> None:
 
 
 def test_search_issues(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issues")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.api.run_gh", return_value="mock issues")
     result = gh_search_issues(SearchIssuesArgs(repo="owner/repo", limit=50, query="is:open"))
     assert result == "mock issues"
     mock_run_gh.assert_called_once()
@@ -335,7 +351,9 @@ def test_search_issues(mocker: MockerFixture) -> None:
 
 
 def test_list_review_comments(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock comments")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.reviews.run_gh", return_value="mock comments"
+    )
     result = gh_review_comments_list(ReviewCommentsListArgs(repo="owner/repo", pr=42))
     assert result == "mock comments"
     mock_run_gh.assert_called_once()
@@ -348,7 +366,9 @@ def test_list_review_comments(mocker: MockerFixture) -> None:
 
 
 def test_list_review_comments_bot_only(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock bot comments")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.reviews.run_gh", return_value="mock bot comments"
+    )
     result = gh_review_comments_list(
         ReviewCommentsListArgs(bot_only=True, repo="owner/repo", pr=42)
     )
@@ -361,7 +381,9 @@ def test_list_review_comments_bot_only(mocker: MockerFixture) -> None:
 
 
 def test_get_review_threads(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock threads")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.reviews.run_gh", return_value="mock threads"
+    )
     result = gh_review_threads_get(ReviewThreadsGetArgs(repo="owner/repo", pr=42))
     assert result == "mock threads"
     mock_run_gh.assert_called_once()
@@ -376,7 +398,9 @@ def test_get_review_threads(mocker: MockerFixture) -> None:
 
 
 def test_get_review_threads_bot_only(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock bot threads")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.reviews.run_gh", return_value="mock bot threads"
+    )
     result = gh_review_threads_get(ReviewThreadsGetArgs(bot_only=True, repo="owner/repo", pr=42))
     assert result == "mock bot threads"
     args = mock_run_gh.call_args[0][0]
@@ -387,7 +411,7 @@ def test_get_review_threads_bot_only(mocker: MockerFixture) -> None:
 
 
 def test_reply_review_comment(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock reply")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.reviews.run_gh", return_value="mock reply")
     result = gh_review_comment_reply(
         ReviewCommentReplyArgs(repo="owner/repo", pr=42, comment_id=999, body="thanks, fixed")
     )
@@ -401,7 +425,9 @@ def test_reply_review_comment(mocker: MockerFixture) -> None:
 
 
 def test_resolve_review_thread(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock resolved")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.reviews.run_gh", return_value="mock resolved"
+    )
     result = gh_review_thread_resolve(ReviewThreadResolveArgs(thread_id="PRRT_abc123"))
     assert result == "mock resolved"
     mock_run_gh.assert_called_once()
@@ -413,7 +439,9 @@ def test_resolve_review_thread(mocker: MockerFixture) -> None:
 
 
 def test_list_runs(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock list runs")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.actions.run_gh", return_value="mock list runs"
+    )
     result = gh_run_list(RunListArgs(limit=10, repo="owner/repo"))
     assert result == "mock list runs"
     mock_run_gh.assert_called_once()
@@ -427,7 +455,7 @@ def test_list_runs(mocker: MockerFixture) -> None:
 
 
 def test_list_runs_with_filters(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock runs")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.actions.run_gh", return_value="mock runs")
     result = gh_run_list(RunListArgs(limit=5, branch="main", workflow="ci.yml", repo="owner/repo"))
     assert result == "mock runs"
     mock_run_gh.assert_called_once()
@@ -443,7 +471,9 @@ def test_list_runs_with_filters(mocker: MockerFixture) -> None:
 
 
 def test_get_run(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock get run")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.actions.run_gh", return_value="mock get run"
+    )
     result = gh_run_get(RunArgs(repo="owner/repo", run_id=789))
     assert result == "mock get run"
     mock_run_gh.assert_called_once()
@@ -454,7 +484,7 @@ def test_get_run(mocker: MockerFixture) -> None:
 
 
 def test_run_failed_logs(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock logs")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.actions.run_gh", return_value="mock logs")
     result = gh_run_failed_logs(RunArgs(repo="owner/repo", run_id=789))
     assert result == "mock logs"
     mock_run_gh.assert_called_once()
@@ -466,7 +496,7 @@ def test_run_failed_logs(mocker: MockerFixture) -> None:
 
 
 def test_api_get(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock api get")
+    mock_run_gh = mocker.patch("mcp_servers.github.tools.api.run_gh", return_value="mock api get")
     result = gh_api_get(ApiGetArgs(jq_filter=".[] | .url", endpoint="repos/owner/repo/pulls"))
     assert result == "mock api get"
     mock_run_gh.assert_called_once()
@@ -479,7 +509,7 @@ def test_api_get(mocker: MockerFixture) -> None:
 
 def test_graphql_query(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch(
-        "mcp_servers.github.server.run_gh", return_value="mock graphql query"
+        "mcp_servers.github.tools.api.run_gh", return_value="mock graphql query"
     )
     result = gh_graphql_query(
         GraphqlQueryArgs(jq_filter=".data.viewer.login", query="query { viewer { login } }")
@@ -517,7 +547,9 @@ def test_main_block(mocker: MockerFixture) -> None:
 
 
 def test_audit_log_decorator(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.issues.run_gh", return_value="mock issue create"
+    )
     result = gh_issue_create(
         IssueCreateArgs(title="My Issue", body="Issue body", repo="owner/repo")
     )
@@ -540,7 +572,9 @@ def test_audit_log_decorator(mocker: MockerFixture, tmp_path: pathlib.Path) -> N
 
 
 def test_audit_log_decorator_exception_in_db(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.issues.run_gh", return_value="mock issue create"
+    )
     mocker.patch("sqlite3.connect", side_effect=Exception("db error"))
     result = gh_issue_create(
         IssueCreateArgs(title="My Issue", body="Issue body", repo="owner/repo")
@@ -550,7 +584,7 @@ def test_audit_log_decorator_exception_in_db(mocker: MockerFixture) -> None:
 
 
 def test_audit_log_decorator_non_model_arg(mocker: MockerFixture) -> None:
-    from mcp_servers.github.server import _audit_log
+    from mcp_servers.github.utils import _audit_log
 
     @_audit_log
     def dummy_tool(my_arg: str) -> str:
@@ -561,14 +595,16 @@ def test_audit_log_decorator_non_model_arg(mocker: MockerFixture) -> None:
 
 
 def test_ttl_cache_eviction(mocker: MockerFixture) -> None:
-    import mcp_servers.github.server
+    import mcp_servers.github.utils
 
-    mcp_servers.github.server._CACHE.clear()
+    mcp_servers.github.utils._CACHE.clear()
 
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.repos.run_gh", return_value="mock repo list"
+    )
 
     # 1. First call sets cache
-    mock_time = mocker.patch("mcp_servers.github.server.time.time", return_value=1000.0)
+    mock_time = mocker.patch("mcp_servers.github.utils.time.time", return_value=1000.0)
     gh_repo_list(RepoListArgs(limit=5, owner="owner"))
     assert mock_run_gh.call_count == 1
 
@@ -584,7 +620,7 @@ def test_ttl_cache_eviction(mocker: MockerFixture) -> None:
 
 
 def test_audit_log_unserializable_arg(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
-    from mcp_servers.github.server import _audit_log
+    from mcp_servers.github.utils import _audit_log
 
     class UnserializableObject:
         pass
