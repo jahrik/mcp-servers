@@ -18,6 +18,7 @@ mcp-github = "mcp_servers.github.server:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
     "ruff>=0.6.0",
 ]
 
