@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field
 
 from mcp_servers._common import run_gh, validate_ref, validate_repo
 
@@ -37,6 +38,171 @@ _REPO_FIELDS = (
     "stargazerCount,forkCount,primaryLanguage"
 )
 
+_REPO_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
+
+
+class RepoListArgs(BaseModel, frozen=True):
+    owner: str = Field(
+        pattern=r"^[a-zA-Z0-9-]+$", description="The GitHub user or organization name."
+    )
+    limit: int = Field(
+        30, ge=1, le=100, description="Maximum number of repositories to return (1-100)."
+    )
+
+
+class RepoArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+
+
+class PrListArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    state: str = Field("open", description="``open``, ``closed``, ``merged``, or ``all``.")
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of PRs to return (1-100).")
+
+
+class PrArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    number: int = Field(description="Pull request number.")
+
+
+class PrCreateArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    title: str = Field(description="Title of the pull request.")
+    body: str = Field(description="Body/description of the pull request.")
+    head: str = Field(description="The branch that contains the commits for your pull request.")
+    base: str | None = Field(None, description="The branch into which you want your code merged.")
+    draft: bool = Field(False, description="Mark the pull request as a draft.")
+
+
+class PrCommentArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    body: str = Field(description="The comment body.")
+
+
+class PrMergeArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    merge_method: str = Field(
+        "squash", description="``squash``, ``merge``, or ``rebase``. Default is ``squash``."
+    )
+    delete_branch: bool = Field(
+        False, description="Delete the local and remote branch after merge."
+    )
+
+
+class IssueListArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    state: str = Field("open", description="``open``, ``closed``, or ``all``.")
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of issues to return (1-100).")
+
+
+class IssueArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    number: int = Field(description="Issue number.")
+
+
+class IssueCreateArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    title: str = Field(description="Title of the issue.")
+    body: str = Field(description="Body/description of the issue.")
+
+
+class IssueCommentArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    issue: int = Field(description="Issue number.")
+    body: str = Field(description="The comment body.")
+
+
+class FileGetArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    path: str = Field(description="Path to the file within the repo.")
+    ref: str = Field("HEAD", description="Branch, tag, or commit SHA (default ``HEAD``).")
+
+
+class SearchCodeArgs(BaseModel, frozen=True):
+    query: str = Field(description="Search expression (GitHub code-search syntax).")
+    repo: str | None = Field(
+        None,
+        pattern=_REPO_PATTERN,
+        description="Optional ``owner/name`` to scope the search to one repo.",
+    )
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of results (1-100).")
+
+
+class SearchPrsArgs(BaseModel, frozen=True):
+    query: str = Field(description="Search expression (GitHub search syntax).")
+    repo: str | None = Field(
+        None,
+        pattern=_REPO_PATTERN,
+        description="Optional ``owner/name`` to scope the search to one repo.",
+    )
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of results (1-100).")
+
+
+class SearchIssuesArgs(BaseModel, frozen=True):
+    query: str = Field(description="Search expression (GitHub search syntax).")
+    repo: str | None = Field(
+        None,
+        pattern=_REPO_PATTERN,
+        description="Optional ``owner/name`` to scope the search to one repo.",
+    )
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of results (1-100).")
+
+
+class RunListArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    branch: str | None = Field(None, description="Optional branch name to filter by.")
+    workflow: str | None = Field(
+        None, description="Optional workflow name or filename to filter by."
+    )
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of runs to return (1-100).")
+
+
+class RunArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    run_id: int = Field(description="The run ID (databaseId).")
+
+
+class ReviewCommentsListArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    bot_only: bool = Field(False, description="Keep only bot/Copilot comments.")
+
+
+class ReviewThreadsGetArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    bot_only: bool = Field(
+        False, description="Keep only threads that contain a bot/Copilot comment."
+    )
+
+
+class ReviewCommentReplyArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    comment_id: int = Field(description="The review comment id to reply to.")
+    body: str = Field(description="Reply text.")
+
+
+class ReviewThreadResolveArgs(BaseModel, frozen=True):
+    thread_id: str = Field(description="The review thread node id from ``gh_review_threads_get``.")
+
+
+class ApiGetArgs(BaseModel, frozen=True):
+    endpoint: str = Field(description="The API endpoint path (e.g. ``repos/owner/repo/pulls``).")
+    jq_filter: str | None = Field(
+        None, description="Optional jq filter string to parse the response."
+    )
+
+
+class GraphqlQueryArgs(BaseModel, frozen=True):
+    query: str = Field(description="The GraphQL query string.")
+    jq_filter: str | None = Field(
+        None, description="Optional jq filter string to parse the response."
+    )
+
+
 def _audit_log[F: Callable[..., Any]](func: F) -> F:
     """Decorator to audit log write tools to a SQLite DB."""
 
@@ -51,57 +217,108 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
         db_path = os.path.join(mcp_dir, "audit.db")
 
         conn = sqlite3.connect(db_path)
-        try:
-            with conn:
-                conn.execute(
-                    '''CREATE TABLE IF NOT EXISTS audit_log (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT,
-                        tool_name TEXT,
-                        arguments TEXT
-                    )'''
-                )
-                ts = datetime.now(UTC).isoformat()
-                args_json = json.dumps(bound.arguments)
-                conn.execute(
-                    "INSERT INTO audit_log (timestamp, tool_name, arguments) VALUES (?, ?, ?)",
-                    (ts, getattr(func, "__name__", str(func)), args_json),
-                )
-        finally:
-            conn.close()
+        dumped_args = {}
+        for k, v in bound.arguments.items():
+            if hasattr(v, "model_dump"):
+                dumped_args[k] = v.model_dump()
+            else:
+                dumped_args[k] = v
+        args_json = json.dumps(dumped_args)
 
-        return func(*args, **kwargs)
+        start_time = datetime.now(UTC)
+        success = True
+        stderr = None
+
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            success = False
+            from mcp_servers._common.gh import GhError
+
+            stderr = str(e) if isinstance(e, GhError) else repr(e)
+            raise
+        finally:
+            end_time = datetime.now(UTC)
+            duration_ms = (end_time - start_time).total_seconds() * 1000
+
+            mcp_dir = os.path.expanduser("~/.mcp")
+            os.makedirs(mcp_dir, exist_ok=True)
+            db_path = os.path.join(mcp_dir, "audit.db")
+
+            conn = sqlite3.connect(db_path)
+            try:
+                with conn:
+                    conn.execute(
+                        """CREATE TABLE IF NOT EXISTS audit_log (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp TEXT,
+                            tool_name TEXT,
+                            arguments TEXT,
+                            duration_ms REAL,
+                            success BOOLEAN,
+                            stderr TEXT
+                        )"""
+                    )
+                    # Migrations for existing DBs
+                    import contextlib
+
+                    for col, col_type in [
+                        ("duration_ms", "REAL"),
+                        ("success", "BOOLEAN"),
+                        ("stderr", "TEXT"),
+                    ]:
+                        with contextlib.suppress(sqlite3.OperationalError):
+                            conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
+
+                    ts = start_time.isoformat()
+                    conn.execute(
+                        "INSERT INTO audit_log (timestamp, tool_name, arguments, "
+                        "duration_ms, success, stderr) VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            ts,
+                            getattr(func, "__name__", str(func)),
+                            args_json,
+                            duration_ms,
+                            success,
+                            stderr,
+                        ),
+                    )
+            finally:
+                conn.close()
 
     return cast(F, wrapper)
 
 
 @mcp.tool()
 @functools.lru_cache(maxsize=128)
-def gh_repo_list(owner: str, limit: int = 30) -> str:
+def gh_repo_list(args: RepoListArgs) -> str:
     """List repositories for an owner (user or organization).
 
     Args:
         owner: The GitHub user or organization name.
         limit: Maximum number of repositories to return (1-100).
     """
+    owner = args.owner
+    limit = args.limit
     limit = max(1, min(limit, 100))
     return run_gh(["repo", "list", owner, "--limit", str(limit), "--json", _REPO_FIELDS])
 
 
 @mcp.tool()
 @functools.lru_cache(maxsize=128)
-def gh_repo_get(repo: str) -> str:
+def gh_repo_get(args: RepoArgs) -> str:
     """Get a single repository's metadata.
 
     Args:
         repo: Repository as ``owner/name``.
     """
+    repo = args.repo
     validate_repo(repo)
     return run_gh(["repo", "view", repo, "--json", _REPO_FIELDS])
 
 
 @mcp.tool()
-def gh_pr_list(repo: str, state: str = "open", limit: int = 20) -> str:
+def gh_pr_list(args: PrListArgs) -> str:
     """List pull requests for a repo.
 
     Args:
@@ -109,6 +326,9 @@ def gh_pr_list(repo: str, state: str = "open", limit: int = 20) -> str:
         state: ``open``, ``closed``, ``merged``, or ``all``.
         limit: Maximum number of PRs to return (1-100).
     """
+    repo = args.repo
+    state = args.state
+    limit = args.limit
     validate_repo(repo)
     limit = max(1, min(limit, 100))
     return run_gh(
@@ -117,8 +337,10 @@ def gh_pr_list(repo: str, state: str = "open", limit: int = 20) -> str:
 
 
 @mcp.tool()
-def gh_pr_get(repo: str, number: int) -> str:
+def gh_pr_get(args: PrArgs) -> str:
     """Get a single pull request's metadata (title, body, state, refs)."""
+    repo = args.repo
+    number = args.number
     validate_repo(repo)
     return run_gh(
         [
@@ -134,20 +356,24 @@ def gh_pr_get(repo: str, number: int) -> str:
 
 
 @mcp.tool()
-def gh_pr_diff(repo: str, number: int) -> str:
+def gh_pr_diff(args: PrArgs) -> str:
     """Get the unified diff for a pull request."""
+    repo = args.repo
+    number = args.number
     validate_repo(repo)
     return run_gh(["pr", "diff", str(int(number)), "-R", repo])
 
 
 @mcp.tool()
-def gh_pr_checks(repo: str, number: int) -> str:
+def gh_pr_checks(args: PrArgs) -> str:
     """Get the status of checks for a pull request.
 
     Args:
         repo: Repository as ``owner/name``.
         number: Pull request number.
     """
+    repo = args.repo
+    number = args.number
     validate_repo(repo)
     return run_gh(
         [
@@ -164,9 +390,7 @@ def gh_pr_checks(repo: str, number: int) -> str:
 
 @mcp.tool()
 @_audit_log
-def gh_pr_create(
-    repo: str, title: str, body: str, head: str, base: str | None = None, draft: bool = False
-) -> str:
+def gh_pr_create(args: PrCreateArgs) -> str:
     """Create a pull request.
 
     Args:
@@ -177,18 +401,24 @@ def gh_pr_create(
         base: The branch into which you want your code merged.
         draft: Mark the pull request as a draft.
     """
+    repo = args.repo
+    title = args.title
+    body = args.body
+    head = args.head
+    base = args.base
+    draft = args.draft
     validate_repo(repo)
-    args = ["pr", "create", "-R", repo, "--title", title, "--body", body, "--head", head]
+    cmd_args = ["pr", "create", "-R", repo, "--title", title, "--body", body, "--head", head]
     if base is not None:
-        args += ["--base", base]
+        cmd_args += ["--base", base]
     if draft:
-        args += ["--draft"]
-    return run_gh(args)
+        cmd_args += ["--draft"]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
 @_audit_log
-def gh_pr_comment(repo: str, pr: int, body: str) -> str:
+def gh_pr_comment(args: PrCommentArgs) -> str:
     """Add a comment to a pull request.
 
     Args:
@@ -196,18 +426,16 @@ def gh_pr_comment(repo: str, pr: int, body: str) -> str:
         pr: Pull request number.
         body: The comment body.
     """
+    repo = args.repo
+    pr = args.pr
+    body = args.body
     validate_repo(repo)
     return run_gh(["pr", "comment", str(int(pr)), "-R", repo, "--body", body])
 
 
 @mcp.tool()
 @_audit_log
-def gh_pr_merge(
-    repo: str,
-    pr: int,
-    merge_method: str = "squash",
-    delete_branch: bool = False,
-) -> str:
+def gh_pr_merge(args: PrMergeArgs) -> str:
     """Merge a pull request.
 
     Args:
@@ -216,17 +444,21 @@ def gh_pr_merge(
         merge_method: ``squash``, ``merge``, or ``rebase``. Default is ``squash``.
         delete_branch: Delete the local and remote branch after merge.
     """
+    repo = args.repo
+    pr = args.pr
+    merge_method = args.merge_method
+    delete_branch = args.delete_branch
     validate_repo(repo)
     if merge_method not in {"squash", "merge", "rebase"}:
         raise ValueError(f"Invalid merge method: {merge_method}")
-    args = ["pr", "merge", str(int(pr)), "-R", repo, f"--{merge_method}"]
+    cmd_args = ["pr", "merge", str(int(pr)), "-R", repo, f"--{merge_method}"]
     if delete_branch:
-        args += ["--delete-branch"]
-    return run_gh(args)
+        cmd_args += ["--delete-branch"]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_issue_list(repo: str, state: str = "open", limit: int = 20) -> str:
+def gh_issue_list(args: IssueListArgs) -> str:
     """List issues for a repo.
 
     Args:
@@ -234,6 +466,9 @@ def gh_issue_list(repo: str, state: str = "open", limit: int = 20) -> str:
         state: ``open``, ``closed``, or ``all``.
         limit: Maximum number of issues to return (1-100).
     """
+    repo = args.repo
+    state = args.state
+    limit = args.limit
     validate_repo(repo)
     limit = max(1, min(limit, 100))
     return run_gh(
@@ -253,8 +488,10 @@ def gh_issue_list(repo: str, state: str = "open", limit: int = 20) -> str:
 
 
 @mcp.tool()
-def gh_issue_get(repo: str, number: int) -> str:
+def gh_issue_get(args: IssueArgs) -> str:
     """Get a single issue's metadata and body."""
+    repo = args.repo
+    number = args.number
     validate_repo(repo)
     return run_gh(
         ["issue", "view", str(int(number)), "-R", repo, "--json", f"{_ISSUE_FIELDS},body,comments"]
@@ -263,7 +500,7 @@ def gh_issue_get(repo: str, number: int) -> str:
 
 @mcp.tool()
 @_audit_log
-def gh_issue_create(repo: str, title: str, body: str) -> str:
+def gh_issue_create(args: IssueCreateArgs) -> str:
     """Create an issue.
 
     Args:
@@ -271,13 +508,16 @@ def gh_issue_create(repo: str, title: str, body: str) -> str:
         title: Title of the issue.
         body: Body/description of the issue.
     """
+    repo = args.repo
+    title = args.title
+    body = args.body
     validate_repo(repo)
     return run_gh(["issue", "create", "-R", repo, "--title", title, "--body", body])
 
 
 @mcp.tool()
 @_audit_log
-def gh_issue_comment(repo: str, issue: int, body: str) -> str:
+def gh_issue_comment(args: IssueCommentArgs) -> str:
     """Add a comment to an issue.
 
     Args:
@@ -285,12 +525,15 @@ def gh_issue_comment(repo: str, issue: int, body: str) -> str:
         issue: Issue number.
         body: The comment body.
     """
+    repo = args.repo
+    issue = args.issue
+    body = args.body
     validate_repo(repo)
     return run_gh(["issue", "comment", str(int(issue)), "-R", repo, "--body", body])
 
 
 @mcp.tool()
-def gh_file_get(repo: str, path: str, ref: str = "HEAD") -> str:
+def gh_file_get(args: FileGetArgs) -> str:
     """Read a file's contents from a repo at a given ref.
 
     Args:
@@ -298,6 +541,9 @@ def gh_file_get(repo: str, path: str, ref: str = "HEAD") -> str:
         path: Path to the file within the repo.
         ref: Branch, tag, or commit SHA (default ``HEAD``).
     """
+    repo = args.repo
+    path = args.path
+    ref = args.ref
     validate_repo(repo)
     validate_ref(ref)
     # `gh api` with a raw Accept header returns the file body verbatim.
@@ -314,7 +560,7 @@ def gh_file_get(repo: str, path: str, ref: str = "HEAD") -> str:
 
 
 @mcp.tool()
-def gh_search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_code(args: SearchCodeArgs) -> str:
     """Search code on GitHub.
 
     Args:
@@ -322,16 +568,19 @@ def gh_search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
         repo: Optional ``owner/name`` to scope the search to one repo.
         limit: Maximum number of results (1-100).
     """
+    query = args.query
+    repo = args.repo
+    limit = args.limit
     limit = max(1, min(limit, 100))
-    args = ["search", "code", query, "--limit", str(limit)]
+    cmd_args = ["search", "code", query, "--limit", str(limit)]
     if repo is not None:
         validate_repo(repo)
-        args += ["--repo", repo]
-    return run_gh(args)
+        cmd_args += ["--repo", repo]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_prs(args: SearchPrsArgs) -> str:
     """Search pull requests on GitHub.
 
     Args:
@@ -339,16 +588,19 @@ def gh_search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
         repo: Optional ``owner/name`` to scope the search to one repo.
         limit: Maximum number of results (1-100).
     """
+    query = args.query
+    repo = args.repo
+    limit = args.limit
     limit = max(1, min(limit, 100))
-    args = ["search", "prs", query, "--limit", str(limit), "--json", _PR_FIELDS]
+    cmd_args = ["search", "prs", query, "--limit", str(limit), "--json", _PR_FIELDS]
     if repo is not None:
         validate_repo(repo)
-        args += ["--repo", repo]
-    return run_gh(args)
+        cmd_args += ["--repo", repo]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_issues(args: SearchIssuesArgs) -> str:
     """Search issues on GitHub.
 
     Args:
@@ -356,21 +608,22 @@ def gh_search_issues(query: str, repo: str | None = None, limit: int = 20) -> st
         repo: Optional ``owner/name`` to scope the search to one repo.
         limit: Maximum number of results (1-100).
     """
+    query = args.query
+    repo = args.repo
+    limit = args.limit
     limit = max(1, min(limit, 100))
-    args = ["search", "issues", query, "--limit", str(limit), "--json", _ISSUE_FIELDS]
+    cmd_args = ["search", "issues", query, "--limit", str(limit), "--json", _ISSUE_FIELDS]
     if repo is not None:
         validate_repo(repo)
-        args += ["--repo", repo]
-    return run_gh(args)
+        cmd_args += ["--repo", repo]
+    return run_gh(cmd_args)
 
 
 # --- Actions / CI ------------------------------------------------------------
 
 
 @mcp.tool()
-def gh_run_list(
-    repo: str, branch: str | None = None, workflow: str | None = None, limit: int = 20
-) -> str:
+def gh_run_list(args: RunListArgs) -> str:
     """List GitHub Actions workflow runs for a repo.
 
     Args:
@@ -379,26 +632,32 @@ def gh_run_list(
         workflow: Optional workflow name or filename to filter by.
         limit: Maximum number of runs to return (1-100).
     """
+    repo = args.repo
+    branch = args.branch
+    workflow = args.workflow
+    limit = args.limit
     validate_repo(repo)
     if branch is not None:
         validate_ref(branch)
     limit = max(1, min(limit, 100))
-    args = ["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS]
+    cmd_args = ["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS]
     if branch is not None:
-        args += ["--branch", branch]
+        cmd_args += ["--branch", branch]
     if workflow is not None:
-        args += ["--workflow", workflow]
-    return run_gh(args)
+        cmd_args += ["--workflow", workflow]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_run_get(repo: str, run_id: int) -> str:
+def gh_run_get(args: RunArgs) -> str:
     """Get details of a specific GitHub Actions workflow run.
 
     Args:
         repo: Repository as ``owner/name``.
         run_id: The run ID (databaseId).
     """
+    repo = args.repo
+    run_id = args.run_id
     validate_repo(repo)
     return run_gh(
         [
@@ -414,13 +673,15 @@ def gh_run_get(repo: str, run_id: int) -> str:
 
 
 @mcp.tool()
-def gh_run_failed_logs(repo: str, run_id: int) -> str:
+def gh_run_failed_logs(args: RunArgs) -> str:
     """Get the failed logs for a GitHub Actions workflow run.
 
     Args:
         repo: Repository as ``owner/name``.
         run_id: The run ID (databaseId).
     """
+    repo = args.repo
+    run_id = args.run_id
     validate_repo(repo)
     return run_gh(["run", "view", str(int(run_id)), "-R", repo, "--log-failed"])
 
@@ -489,7 +750,7 @@ mutation($threadId:ID!){
 
 
 @mcp.tool()
-def gh_review_comments_list(repo: str, pr: int, bot_only: bool = False) -> str:
+def gh_review_comments_list(args: ReviewCommentsListArgs) -> str:
     """List a PR's inline review comments (read-only).
 
     Returns one JSON object per comment with the ``id`` (needed to reply),
@@ -501,6 +762,9 @@ def gh_review_comments_list(repo: str, pr: int, bot_only: bool = False) -> str:
         bot_only: Keep only bot/Copilot comments — the actionable ones in an
             automated review.
     """
+    repo = args.repo
+    pr = args.pr
+    bot_only = args.bot_only
     validate_repo(repo)
     return run_gh(
         [
@@ -514,7 +778,7 @@ def gh_review_comments_list(repo: str, pr: int, bot_only: bool = False) -> str:
 
 
 @mcp.tool()
-def gh_review_threads_get(repo: str, pr: int, bot_only: bool = False) -> str:
+def gh_review_threads_get(args: ReviewThreadsGetArgs) -> str:
     """List a PR's review threads with ids and resolved state (read-only).
 
     Each thread carries its node ``id`` (pass to ``gh_review_thread_resolve``), its
@@ -526,9 +790,12 @@ def gh_review_threads_get(repo: str, pr: int, bot_only: bool = False) -> str:
         pr: Pull request number.
         bot_only: Keep only threads that contain a bot/Copilot comment.
     """
+    repo = args.repo
+    pr = args.pr
+    bot_only = args.bot_only
     validate_repo(repo)
     owner, _, name = repo.partition("/")
-    args = [
+    cmd_args = [
         "api",
         "graphql",
         "-f",
@@ -542,12 +809,12 @@ def gh_review_threads_get(repo: str, pr: int, bot_only: bool = False) -> str:
     ]
     if bot_only:
         # Filter thread nodes in place, preserving the response envelope.
-        args += ["--jq", _BOT_THREAD_JQ]
-    return run_gh(args)
+        cmd_args += ["--jq", _BOT_THREAD_JQ]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_review_comment_reply(repo: str, pr: int, comment_id: int, body: str) -> str:
+def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
     """Reply to a PR inline review comment's thread (write).
 
     Args:
@@ -557,6 +824,10 @@ def gh_review_comment_reply(repo: str, pr: int, comment_id: int, body: str) -> s
             ``gh_review_comments_list``).
         body: Reply text.
     """
+    repo = args.repo
+    pr = args.pr
+    comment_id = args.comment_id
+    body = args.body
     validate_repo(repo)
     return run_gh(
         [
@@ -571,12 +842,13 @@ def gh_review_comment_reply(repo: str, pr: int, comment_id: int, body: str) -> s
 
 
 @mcp.tool()
-def gh_review_thread_resolve(thread_id: str) -> str:
+def gh_review_thread_resolve(args: ReviewThreadResolveArgs) -> str:
     """Resolve a PR review thread by its node id (write).
 
     Args:
         thread_id: The review thread node id from ``gh_review_threads_get``.
     """
+    thread_id = args.thread_id
     return run_gh(
         [
             "api",
@@ -590,31 +862,35 @@ def gh_review_thread_resolve(thread_id: str) -> str:
 
 
 @mcp.tool()
-def gh_api_get(endpoint: str, jq_filter: str | None = None) -> str:
+def gh_api_get(args: ApiGetArgs) -> str:
     """Make a read-only GET request to the GitHub REST API.
 
     Args:
         endpoint: The API endpoint path (e.g. ``repos/owner/repo/pulls``).
         jq_filter: Optional jq filter string to parse the response.
     """
-    args = ["api", endpoint]
+    endpoint = args.endpoint
+    jq_filter = args.jq_filter
+    cmd_args = ["api", endpoint]
     if jq_filter is not None:
-        args += ["--jq", jq_filter]
-    return run_gh(args)
+        cmd_args += ["--jq", jq_filter]
+    return run_gh(cmd_args)
 
 
 @mcp.tool()
-def gh_graphql_query(query: str, jq_filter: str | None = None) -> str:
+def gh_graphql_query(args: GraphqlQueryArgs) -> str:
     """Make a read-only GraphQL query to the GitHub API.
 
     Args:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
-    args = ["api", "graphql", "-f", f"query={query}"]
+    query = args.query
+    jq_filter = args.jq_filter
+    cmd_args = ["api", "graphql", "-f", f"query={query}"]
     if jq_filter is not None:
-        args += ["--jq", jq_filter]
-    return run_gh(args)
+        cmd_args += ["--jq", jq_filter]
+    return run_gh(cmd_args)
 
 
 def main() -> None:
