@@ -9,18 +9,20 @@ from mcp_servers.github.server import (
     get_issue,
     get_pr,
     get_review_threads,
+    get_run,
     list_issues,
     list_prs,
     list_review_comments,
+    list_runs,
+    main,
     pr_checks,
     pr_diff,
     reply_review_comment,
     resolve_review_thread,
-    search_code,
-    list_runs,
-    get_run,
     run_failed_logs,
-    main,
+    search_code,
+    search_issues,
+    search_prs,
 )
 
 
@@ -116,6 +118,35 @@ def test_search_code(mocker: MockerFixture) -> None:
     assert "50" in args
 
 
+def test_search_prs(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr results")
+    result = search_prs("is:open", repo="owner/repo", limit=50)
+    assert result == "mock pr results"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "search" in args
+    assert "prs" in args
+    assert "is:open" in args
+    assert "owner/repo" in args
+    assert "50" in args
+    assert "--json" in args
+
+
+def test_search_issues(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issues")
+    result = search_issues("is:open", repo="owner/repo", limit=50)
+    assert result == "mock issues"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "search" in args
+    assert "issues" in args
+    assert "is:open" in args
+    assert "owner/repo" in args
+    assert "50" in args
+    assert "--json" in args
+
+
+
 def test_list_review_comments(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock comments")
     result = list_review_comments("owner/repo", 42)
@@ -207,9 +238,9 @@ def test_list_runs(mocker: MockerFixture) -> None:
 
 
 def test_list_runs_with_filters(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock list runs filtered")
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock runs")
     result = list_runs("owner/repo", limit=5, branch="main", workflow="ci.yml")
-    assert result == "mock list runs filtered"
+    assert result == "mock runs"
     mock_run_gh.assert_called_once()
     args = mock_run_gh.call_args[0][0]
     assert "run" in args

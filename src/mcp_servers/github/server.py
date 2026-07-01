@@ -164,6 +164,40 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
     return run_gh(args)
 
 
+@mcp.tool()
+def search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
+    """Search pull requests on GitHub.
+
+    Args:
+        query: Search expression (GitHub search syntax).
+        repo: Optional ``owner/name`` to scope the search to one repo.
+        limit: Maximum number of results (1-100).
+    """
+    limit = max(1, min(limit, 100))
+    args = ["search", "prs", query, "--limit", str(limit), "--json", _PR_FIELDS]
+    if repo is not None:
+        validate_repo(repo)
+        args += ["--repo", repo]
+    return run_gh(args)
+
+
+@mcp.tool()
+def search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
+    """Search issues on GitHub.
+
+    Args:
+        query: Search expression (GitHub search syntax).
+        repo: Optional ``owner/name`` to scope the search to one repo.
+        limit: Maximum number of results (1-100).
+    """
+    limit = max(1, min(limit, 100))
+    args = ["search", "issues", query, "--limit", str(limit), "--json", _ISSUE_FIELDS]
+    if repo is not None:
+        validate_repo(repo)
+        args += ["--repo", repo]
+    return run_gh(args)
+
+
 # --- Actions / CI ------------------------------------------------------------
 
 
