@@ -149,11 +149,34 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 # Project the inline-comment fields the review loop actually needs, so output
 # stays lean (raw `gh api` comment objects carry dozens of fields).
-_REVIEW_COMMENT_JQ = ".[] | {id, author: .user.login, path, line: (.line // .original_line), body}"
+_REVIEW_COMMENT_PROJECT = "{id, author: .user.login, path, line: (.line // .original_line), body}"
+
+# A comment counts as a bot comment when its author is a GitHub App/bot or its
+# login contains "copilot" — the actionable comments in an automated review.
+# `.user.type` is the REST field; `.author.__typename` the GraphQL one.
+_BOT_SELECT_REST = (
+    'select(.user.type == "Bot" or (.user.login | ascii_downcase | contains("copilot")))'
+)
+_BOT_THREAD_JQ = (
+    ".data.repository.pullRequest.reviewThreads.nodes |= "
+    "map(select(any(.comments.nodes[]; "
+    '.author.__typename == "Bot" or (.author.login | ascii_downcase | contains("copilot")))))'
+)
+
+
+def _review_comment_jq(*, bot_only: bool) -> str:
+    """`gh api --jq` program that projects (and optionally bot-filters) comments."""
+    stages = [".[]"]
+    if bot_only:
+        stages.append(_BOT_SELECT_REST)
+    stages.append(_REVIEW_COMMENT_PROJECT)
+    return " | ".join(stages)
+
 
 # Read every review thread on a PR with its node id (needed to resolve), its
 # resolved/outdated state, and the comments it contains (databaseId ties a
-# thread back to a REST comment id from `list_review_comments`).
+# thread back to a REST comment id from `list_review_comments`; __typename lets
+# `bot_only` keep only threads with a bot comment).
 _THREADS_QUERY = """
 query($owner:String!,$name:String!,$pr:Int!){
   repository(owner:$owner,name:$name){
@@ -164,7 +187,7 @@ query($owner:String!,$name:String!,$pr:Int!){
           isResolved
           isOutdated
           comments(first:100){
-            nodes{ databaseId author{login} path line body }
+            nodes{ databaseId author{login __typename} path line body }
           }
         }
       }
@@ -181,7 +204,7 @@ mutation($threadId:ID!){
 
 
 @mcp.tool()
-def list_review_comments(repo: str, pr: int) -> str:
+def list_review_comments(repo: str, pr: int, bot_only: bool = False) -> str:
     """List a PR's inline review comments (read-only).
 
     Returns one JSON object per comment with the ``id`` (needed to reply),
@@ -190,6 +213,8 @@ def list_review_comments(repo: str, pr: int) -> str:
     Args:
         repo: Repository as ``owner/name``.
         pr: Pull request number.
+        bot_only: Keep only bot/Copilot comments — the actionable ones in an
+            automated review.
     """
     validate_repo(repo)
     return run_gh(
@@ -198,13 +223,13 @@ def list_review_comments(repo: str, pr: int) -> str:
             f"repos/{repo}/pulls/{int(pr)}/comments",
             "--paginate",
             "--jq",
-            _REVIEW_COMMENT_JQ,
+            _review_comment_jq(bot_only=bot_only),
         ]
     )
 
 
 @mcp.tool()
-def get_review_threads(repo: str, pr: int) -> str:
+def get_review_threads(repo: str, pr: int, bot_only: bool = False) -> str:
     """List a PR's review threads with ids and resolved state (read-only).
 
     Each thread carries its node ``id`` (pass to ``resolve_review_thread``), its
@@ -214,23 +239,26 @@ def get_review_threads(repo: str, pr: int) -> str:
     Args:
         repo: Repository as ``owner/name``.
         pr: Pull request number.
+        bot_only: Keep only threads that contain a bot/Copilot comment.
     """
     validate_repo(repo)
     owner, _, name = repo.partition("/")
-    return run_gh(
-        [
-            "api",
-            "graphql",
-            "-f",
-            f"owner={owner}",
-            "-f",
-            f"name={name}",
-            "-F",
-            f"pr={int(pr)}",
-            "-f",
-            f"query={_THREADS_QUERY}",
-        ]
-    )
+    args = [
+        "api",
+        "graphql",
+        "-f",
+        f"owner={owner}",
+        "-f",
+        f"name={name}",
+        "-F",
+        f"pr={int(pr)}",
+        "-f",
+        f"query={_THREADS_QUERY}",
+    ]
+    if bot_only:
+        # Filter thread nodes in place, preserving the response envelope.
+        args += ["--jq", _BOT_THREAD_JQ]
+    return run_gh(args)
 
 
 @mcp.tool()

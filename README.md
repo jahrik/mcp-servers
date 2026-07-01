@@ -21,7 +21,8 @@ A read-only GitHub server backed by the **`gh` CLI**. Because it shells out to `
 any config file, no OAuth flow. If `gh` is logged in, the server works.
 
 Read tools: `list_prs`, `get_pr`, `pr_diff`, `list_issues`, `get_issue`, `get_file`,
-`search_code`, `list_review_comments`, `get_review_threads`.
+`search_code`, `list_review_comments`, `get_review_threads`. The two review-read tools
+take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review.
 
 Write tools: `reply_review_comment`, `resolve_review_thread` — the PR review-thread loop
 (read a PR's inline comments, reply, resolve the thread). Write tools are added

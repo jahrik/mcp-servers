@@ -109,6 +109,20 @@ def test_list_review_comments(mocker: MockerFixture) -> None:
     assert "api" in args
     assert "repos/owner/repo/pulls/42/comments" in args
     assert "--paginate" in args
+    # Default: no bot filter in the jq program.
+    jq = args[args.index("--jq") + 1]
+    assert "copilot" not in jq
+
+
+def test_list_review_comments_bot_only(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock bot comments")
+    result = list_review_comments("owner/repo", 42, bot_only=True)
+    assert result == "mock bot comments"
+    args = mock_run_gh.call_args[0][0]
+    jq = args[args.index("--jq") + 1]
+    assert "select" in jq
+    assert "copilot" in jq
+    assert "Bot" in jq
 
 
 def test_get_review_threads(mocker: MockerFixture) -> None:
@@ -123,6 +137,19 @@ def test_get_review_threads(mocker: MockerFixture) -> None:
     assert "name=repo" in args
     assert "pr=42" in args
     assert any(a.startswith("query=") and "reviewThreads" in a for a in args)
+    # Default: no client-side thread filtering.
+    assert "--jq" not in args
+
+
+def test_get_review_threads_bot_only(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock bot threads")
+    result = get_review_threads("owner/repo", 42, bot_only=True)
+    assert result == "mock bot threads"
+    args = mock_run_gh.call_args[0][0]
+    assert "--jq" in args
+    jq = args[args.index("--jq") + 1]
+    assert "reviewThreads.nodes" in jq
+    assert "copilot" in jq
 
 
 def test_reply_review_comment(mocker: MockerFixture) -> None:
