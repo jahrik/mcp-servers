@@ -108,8 +108,10 @@ def gh_api_get(args: ApiGetArgs) -> str:
         jq_filter: Optional jq filter string to parse the response.
     """
     endpoint = args.endpoint
+    if endpoint == "graphql":
+        raise ValueError("graphql endpoint is not supported by gh_api_get")
     jq_filter = args.jq_filter
-    cmd_args = ["api", endpoint]
+    cmd_args = ["api", endpoint, "-X", "GET"]
     if jq_filter is not None:
         cmd_args += ["--jq", jq_filter]
     return run_gh(cmd_args)
@@ -122,11 +124,15 @@ def gh_graphql_query(args: GraphqlQueryArgs) -> str:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
-    if re.search(r"^\s*mutation\b", args.query, re.IGNORECASE):
+    if re.search(r"(?m)^\s*mutation\b", args.query, re.IGNORECASE):
         raise ValueError("Mutations are not allowed in gh_graphql_query")
     query = args.query
     jq_filter = args.jq_filter
     cmd_args = ["api", "graphql", "-f", f"query={query}"]
+    if args.variables:
+        import json
+
+        cmd_args += ["-F", f"variables={json.dumps(args.variables)}"]
     if jq_filter is not None:
         cmd_args += ["--jq", jq_filter]
     return run_gh(cmd_args)

@@ -327,7 +327,7 @@ wheels = [
 
 [[package]]
 name = "mcp-servers"
-version = "0.1.0"
+version = "0.1.dev32+gee1fc0e0c.d20260701"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },

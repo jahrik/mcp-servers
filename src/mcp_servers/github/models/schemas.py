@@ -1,3 +1,5 @@
+import typing
+
 from pydantic import BaseModel, Field
 
 _REPO_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
@@ -166,6 +168,9 @@ class ApiGetArgs(BaseModel, frozen=True):
 
 class GraphqlQueryArgs(BaseModel, frozen=True):
     query: str = Field(description="The GraphQL query string.")
+    variables: dict[str, typing.Any] | None = Field(
+        None, description="Optional variables dictionary."
+    )
     jq_filter: str | None = Field(
         None, description="Optional jq filter string to parse the response."
     )

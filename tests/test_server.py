@@ -503,8 +503,17 @@ def test_api_get(mocker: MockerFixture) -> None:
     args = mock_run_gh.call_args[0][0]
     assert "api" in args
     assert "repos/owner/repo/pulls" in args
+    assert "-X" in args
+    assert "GET" in args
     assert "--jq" in args
     assert ".[] | .url" in args
+
+
+def test_api_get_graphql_error(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="graphql endpoint is not supported by gh_api_get"):
+        gh_api_get(ApiGetArgs(endpoint="graphql"))
 
 
 def test_graphql_query(mocker: MockerFixture) -> None:
@@ -530,6 +539,22 @@ def test_graphql_query_mutation(mocker: MockerFixture) -> None:
 
     with pytest.raises(ValueError, match="Mutations are not allowed"):
         gh_graphql_query(GraphqlQueryArgs(query="mutation { update() }"))
+
+    with pytest.raises(ValueError, match="Mutations are not allowed"):
+        gh_graphql_query(GraphqlQueryArgs(query="# comment\n  mutation { update() }"))
+
+
+def test_graphql_query_with_variables(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.tools.api.run_gh", return_value="mock graphql query"
+    )
+    result = gh_graphql_query(
+        GraphqlQueryArgs(query="query($id: ID!) { node(id: $id) { id } }", variables={"id": "abc"})
+    )
+    assert result == "mock graphql query"
+    args = mock_run_gh.call_args[0][0]
+    assert "-F" in args
+    assert 'variables={"id": "abc"}' in args
 
 
 def test_main(mocker: MockerFixture) -> None:

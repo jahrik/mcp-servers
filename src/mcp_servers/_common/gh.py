@@ -83,7 +83,7 @@ def run_gh(args: list[str], *, timeout: int = DEFAULT_TIMEOUT) -> str:
                 )
             else:
                 hint = "\nHint: Resource not found. Verify repository and arguments."
-        elif "is not mergeable" in stderr:
+        elif "is not mergeable" in stderr_lower:
             hint = (
                 "\nHint: PR is not mergeable. Check gh_pr_checks for failures or "
                 "gh_pr_diff for conflicts."
