@@ -83,4 +83,3 @@ def test_run_gh_success(mocker: MockerFixture) -> None:
         ),
     )
     assert run_gh(["list"]) == "success output"
-

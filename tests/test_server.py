@@ -5,19 +5,21 @@ from __future__ import annotations
 from pytest_mock import MockerFixture
 
 from mcp_servers.github.server import (
+    create_issue,
+    create_pr,
     get_file,
     get_issue,
     get_pr,
     get_repo,
     get_review_threads,
     get_run,
+    issue_comment,
     list_issues,
     list_prs,
     list_repos,
     list_review_comments,
     list_runs,
     main,
-    create_pr,
     merge_pr,
     pr_checks,
     pr_comment,
@@ -101,7 +103,14 @@ def test_pr_checks(mocker: MockerFixture) -> None:
 
 def test_create_pr(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr create")
-    result = create_pr("owner/repo", title="My PR", body="Fixes bug", head="feature-branch", base="main", draft=True)
+    result = create_pr(
+        "owner/repo",
+        title="My PR",
+        body="Fixes bug",
+        head="feature-branch",
+        base="main",
+        draft=True,
+    )
     assert result == "mock pr create"
     mock_run_gh.assert_called_once()
     args = mock_run_gh.call_args[0][0]
@@ -149,6 +158,7 @@ def test_merge_pr(mocker: MockerFixture) -> None:
 
 def test_merge_pr_invalid_method(mocker: MockerFixture) -> None:
     import pytest
+
     with pytest.raises(ValueError, match="Invalid merge method"):
         merge_pr("owner/repo", 123, merge_method="invalid")
 
@@ -174,6 +184,37 @@ def test_get_issue(mocker: MockerFixture) -> None:
     assert "issue" in args
     assert "view" in args
     assert "456" in args
+
+
+def test_create_issue(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    result = create_issue("owner/repo", title="My Issue", body="Issue body")
+    assert result == "mock issue create"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "issue" in args
+    assert "create" in args
+    assert "owner/repo" in args
+    assert "--title" in args
+    assert "My Issue" in args
+    assert "--body" in args
+    assert "Issue body" in args
+
+
+def test_issue_comment(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.server.run_gh", return_value="mock issue comment"
+    )
+    result = issue_comment("owner/repo", 456, "Fixing this")
+    assert result == "mock issue comment"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "issue" in args
+    assert "comment" in args
+    assert "456" in args
+    assert "owner/repo" in args
+    assert "--body" in args
+    assert "Fixing this" in args
 
 
 def test_get_file(mocker: MockerFixture) -> None:
@@ -226,7 +267,6 @@ def test_search_issues(mocker: MockerFixture) -> None:
     assert "owner/repo" in args
     assert "50" in args
     assert "--json" in args
-
 
 
 def test_list_review_comments(mocker: MockerFixture) -> None:
@@ -366,7 +406,7 @@ def test_main(mocker: MockerFixture) -> None:
 
 def test_main_block(mocker: MockerFixture) -> None:
     import runpy
+
     mock_run = mocker.patch("mcp.server.fastmcp.FastMCP.run")
     runpy.run_module("mcp_servers.github.server", run_name="__main__")
     mock_run.assert_called_once()
-

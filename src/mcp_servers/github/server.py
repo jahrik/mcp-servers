@@ -29,7 +29,6 @@ _REPO_FIELDS = (
 )
 
 
-
 @mcp.tool()
 def list_repos(owner: str, limit: int = 30) -> str:
     """List repositories for an owner (user or organization).
@@ -209,6 +208,32 @@ def get_issue(repo: str, number: int) -> str:
     return run_gh(
         ["issue", "view", str(int(number)), "-R", repo, "--json", f"{_ISSUE_FIELDS},body,comments"]
     )
+
+
+@mcp.tool()
+def create_issue(repo: str, title: str, body: str) -> str:
+    """Create an issue.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        title: Title of the issue.
+        body: Body/description of the issue.
+    """
+    validate_repo(repo)
+    return run_gh(["issue", "create", "-R", repo, "--title", title, "--body", body])
+
+
+@mcp.tool()
+def issue_comment(repo: str, issue: int, body: str) -> str:
+    """Add a comment to an issue.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        issue: Issue number.
+        body: The comment body.
+    """
+    validate_repo(repo)
+    return run_gh(["issue", "comment", str(int(issue)), "-R", repo, "--body", body])
 
 
 @mcp.tool()
