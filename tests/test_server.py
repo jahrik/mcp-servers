@@ -17,7 +17,10 @@ from mcp_servers.github.server import (
     list_review_comments,
     list_runs,
     main,
+    create_pr,
+    merge_pr,
     pr_checks,
+    pr_comment,
     pr_diff,
     reply_review_comment,
     resolve_review_thread,
@@ -94,6 +97,60 @@ def test_pr_checks(mocker: MockerFixture) -> None:
     assert "pr" in args
     assert "checks" in args
     assert "123" in args
+
+
+def test_create_pr(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr create")
+    result = create_pr("owner/repo", title="My PR", body="Fixes bug", head="feature-branch", base="main", draft=True)
+    assert result == "mock pr create"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "create" in args
+    assert "owner/repo" in args
+    assert "--title" in args
+    assert "My PR" in args
+    assert "--body" in args
+    assert "Fixes bug" in args
+    assert "--head" in args
+    assert "feature-branch" in args
+    assert "--base" in args
+    assert "main" in args
+    assert "--draft" in args
+
+
+def test_pr_comment(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr comment")
+    result = pr_comment("owner/repo", 123, "LGTM!")
+    assert result == "mock pr comment"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "comment" in args
+    assert "123" in args
+    assert "owner/repo" in args
+    assert "--body" in args
+    assert "LGTM!" in args
+
+
+def test_merge_pr(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr merge")
+    result = merge_pr("owner/repo", 123, merge_method="rebase", delete_branch=True)
+    assert result == "mock pr merge"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "pr" in args
+    assert "merge" in args
+    assert "123" in args
+    assert "owner/repo" in args
+    assert "--rebase" in args
+    assert "--delete-branch" in args
+
+
+def test_merge_pr_invalid_method(mocker: MockerFixture) -> None:
+    import pytest
+    with pytest.raises(ValueError, match="Invalid merge method"):
+        merge_pr("owner/repo", 123, merge_method="invalid")
 
 
 def test_list_issues(mocker: MockerFixture) -> None:

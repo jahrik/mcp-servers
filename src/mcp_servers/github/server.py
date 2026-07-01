@@ -116,6 +116,66 @@ def pr_checks(repo: str, number: int) -> str:
 
 
 @mcp.tool()
+def create_pr(
+    repo: str, title: str, body: str, head: str, base: str | None = None, draft: bool = False
+) -> str:
+    """Create a pull request.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        title: Title of the pull request.
+        body: Body/description of the pull request.
+        head: The branch that contains the commits for your pull request.
+        base: The branch into which you want your code merged.
+        draft: Mark the pull request as a draft.
+    """
+    validate_repo(repo)
+    args = ["pr", "create", "-R", repo, "--title", title, "--body", body, "--head", head]
+    if base is not None:
+        args += ["--base", base]
+    if draft:
+        args += ["--draft"]
+    return run_gh(args)
+
+
+@mcp.tool()
+def pr_comment(repo: str, pr: int, body: str) -> str:
+    """Add a comment to a pull request.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+        body: The comment body.
+    """
+    validate_repo(repo)
+    return run_gh(["pr", "comment", str(int(pr)), "-R", repo, "--body", body])
+
+
+@mcp.tool()
+def merge_pr(
+    repo: str,
+    pr: int,
+    merge_method: str = "squash",
+    delete_branch: bool = False,
+) -> str:
+    """Merge a pull request.
+
+    Args:
+        repo: Repository as ``owner/name``.
+        pr: Pull request number.
+        merge_method: ``squash``, ``merge``, or ``rebase``. Default is ``squash``.
+        delete_branch: Delete the local and remote branch after merge.
+    """
+    validate_repo(repo)
+    if merge_method not in {"squash", "merge", "rebase"}:
+        raise ValueError(f"Invalid merge method: {merge_method}")
+    args = ["pr", "merge", str(int(pr)), "-R", repo, f"--{merge_method}"]
+    if delete_branch:
+        args += ["--delete-branch"]
+    return run_gh(args)
+
+
+@mcp.tool()
 def list_issues(repo: str, state: str = "open", limit: int = 20) -> str:
     """List issues for a repo.
 
