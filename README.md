@@ -30,7 +30,12 @@ deliberately, one at a time; the server never merges a PR or pushes to a default
 ## Install
 
 ```bash
-uv tool install mcp-servers        # provides the mcp-github console script
+# Install from git — this package is not published to PyPI.
+uv tool install git+https://github.com/jahrik/mcp-servers   # provides the mcp-github script
+
+# Upgrade to the latest main later with:
+uv tool install --force git+https://github.com/jahrik/mcp-servers
+
 # or, from a checkout:
 uv sync
 ```
