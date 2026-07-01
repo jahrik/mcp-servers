@@ -23,6 +23,34 @@ _PR_FIELDS = "number,title,state,author,headRefName,baseRefName,isDraft,url,upda
 _ISSUE_FIELDS = "number,title,state,author,labels,url,updatedAt"
 _RUN_FIELDS = "databaseId,name,displayTitle,status,conclusion,headBranch,headSha,url,updatedAt"
 _CHECK_FIELDS = "name,state,bucket,startedAt,completedAt,link,description,workflow"
+_REPO_FIELDS = (
+    "name,nameWithOwner,description,url,isPrivate,isArchived,pushedAt,updatedAt,"
+    "stargazerCount,forkCount,primaryLanguage"
+)
+
+
+
+@mcp.tool()
+def list_repos(owner: str, limit: int = 30) -> str:
+    """List repositories for an owner (user or organization).
+
+    Args:
+        owner: The GitHub user or organization name.
+        limit: Maximum number of repositories to return (1-100).
+    """
+    limit = max(1, min(limit, 100))
+    return run_gh(["repo", "list", owner, "--limit", str(limit), "--json", _REPO_FIELDS])
+
+
+@mcp.tool()
+def get_repo(repo: str) -> str:
+    """Get a single repository's metadata.
+
+    Args:
+        repo: Repository as ``owner/name``.
+    """
+    validate_repo(repo)
+    return run_gh(["repo", "view", repo, "--json", _REPO_FIELDS])
 
 
 @mcp.tool()

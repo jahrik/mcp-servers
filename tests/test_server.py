@@ -8,10 +8,12 @@ from mcp_servers.github.server import (
     get_file,
     get_issue,
     get_pr,
+    get_repo,
     get_review_threads,
     get_run,
     list_issues,
     list_prs,
+    list_repos,
     list_review_comments,
     list_runs,
     main,
@@ -24,6 +26,29 @@ from mcp_servers.github.server import (
     search_issues,
     search_prs,
 )
+
+
+def test_list_repos(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
+    result = list_repos("owner", limit=5)
+    assert result == "mock repo list"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "repo" in args
+    assert "list" in args
+    assert "owner" in args
+    assert "5" in args
+
+
+def test_get_repo(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo view")
+    result = get_repo("owner/repo")
+    assert result == "mock repo view"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "repo" in args
+    assert "view" in args
+    assert "owner/repo" in args
 
 
 def test_list_prs(mocker: MockerFixture) -> None:
