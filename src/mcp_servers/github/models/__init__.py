@@ -5,15 +5,18 @@ _REPO_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
 
 class RepoListArgs(BaseModel, frozen=True):
     owner: str = Field(
-        pattern=r"^[a-zA-Z0-9-]+$", description="The GitHub user or organization name."
+        pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+        description="The GitHub user or organization name.",
     )
     limit: int = Field(
         30, ge=1, le=100, description="Maximum number of repositories to return (1-100)."
     )
+    no_cache: bool = Field(False, description="Bypass the cache.")
 
 
-class RepoArgs(BaseModel, frozen=True):
+class RepoGetArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    no_cache: bool = Field(False, description="Bypass the cache.")
 
 
 class PrListArgs(BaseModel, frozen=True):
@@ -51,6 +54,7 @@ class PrMergeArgs(BaseModel, frozen=True):
     delete_branch: bool = Field(
         False, description="Delete the local and remote branch after merge."
     )
+    confirm: bool = Field(False, description="Must be true to merge")
 
 
 class IssueListArgs(BaseModel, frozen=True):
@@ -152,7 +156,9 @@ class ReviewThreadResolveArgs(BaseModel, frozen=True):
 
 
 class ApiGetArgs(BaseModel, frozen=True):
-    endpoint: str = Field(description="The API endpoint path (e.g. ``repos/owner/repo/pulls``).")
+    endpoint: str = Field(
+        pattern=r"^[^-].*$", description="The API endpoint path (e.g. ``repos/owner/repo/pulls``)."
+    )
     jq_filter: str | None = Field(
         None, description="Optional jq filter string to parse the response."
     )

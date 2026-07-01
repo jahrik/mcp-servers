@@ -18,6 +18,6 @@ Furthermore, the server implements several production hardening features to prov
 
 ## Best Practices
 
-- Check your available MCP servers for `mcp-github` tools (note: tools are prefixed with `gh_<command>_<action>`, e.g., `gh_pr_list`, `gh_issue_get`, `gh_code_search`).
+- Check your available MCP servers for `mcp-github` tools (note: tools are prefixed with `gh_<command>_<action>`, e.g., `gh_pr_list`, `gh_issue_get`, `gh_search_code`).
 - Use these tools via your MCP calling capabilities rather than spawning subprocesses with `run_command` or similar shell utilities.
 - If an MCP tool provides the information you need, do not attempt to bypass it by using the CLI.

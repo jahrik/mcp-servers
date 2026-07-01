@@ -83,3 +83,63 @@ def test_run_gh_success(mocker: MockerFixture) -> None:
         ),
     )
     assert run_gh(["list"]) == "success output"
+
+
+def test_run_gh_hint_repo_not_found(mocker: MockerFixture) -> None:
+    mocker.patch("shutil.which", return_value="/usr/bin/gh")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["gh", "list"], returncode=1, stdout="", stderr="could not resolve to a repository"
+        ),
+    )
+    with pytest.raises(GhError, match="Hint: Repository not found"):
+        run_gh(["repo", "view", "owner/repo"])
+
+
+def test_run_gh_hint_branch_not_found(mocker: MockerFixture) -> None:
+    mocker.patch("shutil.which", return_value="/usr/bin/gh")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["gh", "list"], returncode=1, stdout="", stderr="not found: branch xyz"
+        ),
+    )
+    with pytest.raises(GhError, match="Hint: Branch or ref not found"):
+        run_gh(["list"])
+
+
+def test_run_gh_hint_resource_not_found(mocker: MockerFixture) -> None:
+    mocker.patch("shutil.which", return_value="/usr/bin/gh")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["gh", "list"], returncode=1, stdout="", stderr="not found"
+        ),
+    )
+    with pytest.raises(GhError, match="Hint: Resource not found"):
+        run_gh(["list"])
+
+
+def test_run_gh_hint_not_mergeable(mocker: MockerFixture) -> None:
+    mocker.patch("shutil.which", return_value="/usr/bin/gh")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["gh", "list"], returncode=1, stdout="", stderr="is not mergeable"
+        ),
+    )
+    with pytest.raises(GhError, match="Hint: PR is not mergeable"):
+        run_gh(["list"])
+
+
+def test_run_gh_hint_node_not_found(mocker: MockerFixture) -> None:
+    mocker.patch("shutil.which", return_value="/usr/bin/gh")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["gh", "list"], returncode=1, stdout="", stderr="could not resolve to a node"
+        ),
+    )
+    with pytest.raises(GhError, match="Hint: Thread or comment not found"):
+        run_gh(["list"])

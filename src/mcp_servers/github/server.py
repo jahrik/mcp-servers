@@ -17,6 +17,7 @@ import inspect
 import json
 import os
 import sqlite3
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -38,7 +39,7 @@ from .models import (
     PrCreateArgs,
     PrListArgs,
     PrMergeArgs,
-    RepoArgs,
+    RepoGetArgs,
     RepoListArgs,
     ReviewCommentReplyArgs,
     ReviewCommentsListArgs,
@@ -64,6 +65,28 @@ _REPO_FIELDS = (
 )
 
 
+_CACHE: dict[str, tuple[float, Any]] = {}
+
+def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(func)
+    def wrapper(args: Any) -> Any:
+        if getattr(args, "no_cache", False):
+            return func(args)
+        dump_args = {}
+        if hasattr(args, "model_dump"):
+            dump_args = args.model_dump(exclude={"no_cache"} if hasattr(args, "no_cache") else None)
+        key = f"{getattr(func, '__name__', str(func))}:{json.dumps(dump_args, sort_keys=True)}"
+        now = time.time()
+        if key in _CACHE:
+            timestamp, value = _CACHE[key]
+            if now - timestamp < 300:
+                return value
+        result = func(args)
+        _CACHE[key] = (now, result)
+        return result
+    return wrapper
+
+
 def _audit_log[F: Callable[..., Any]](func: F) -> F:
     """Decorator to audit log write tools to a SQLite DB."""
 
@@ -73,11 +96,6 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
 
-        mcp_dir = os.path.expanduser("~/.mcp")
-        os.makedirs(mcp_dir, exist_ok=True)
-        db_path = os.path.join(mcp_dir, "audit.db")
-
-        conn = sqlite3.connect(db_path)
         dumped_args = {}
         for k, v in bound.arguments.items():
             if hasattr(v, "model_dump"):
@@ -102,56 +120,59 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
             end_time = datetime.now(UTC)
             duration_ms = (end_time - start_time).total_seconds() * 1000
 
-            mcp_dir = os.path.expanduser("~/.mcp")
-            os.makedirs(mcp_dir, exist_ok=True)
-            db_path = os.path.join(mcp_dir, "audit.db")
-
-            conn = sqlite3.connect(db_path)
             try:
-                with conn:
-                    conn.execute(
-                        """CREATE TABLE IF NOT EXISTS audit_log (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            timestamp TEXT,
-                            tool_name TEXT,
-                            arguments TEXT,
-                            duration_ms REAL,
-                            success BOOLEAN,
-                            stderr TEXT
-                        )"""
-                    )
-                    # Migrations for existing DBs
-                    import contextlib
+                mcp_dir = os.path.expanduser("~/.mcp")
+                os.makedirs(mcp_dir, exist_ok=True)
+                db_path = os.path.join(mcp_dir, "audit.db")
 
-                    for col, col_type in [
-                        ("duration_ms", "REAL"),
-                        ("success", "BOOLEAN"),
-                        ("stderr", "TEXT"),
-                    ]:
-                        with contextlib.suppress(sqlite3.OperationalError):
-                            conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
+                conn = sqlite3.connect(db_path)
+                try:
+                    with conn:
+                        conn.execute(
+                            """CREATE TABLE IF NOT EXISTS audit_log (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                timestamp TEXT,
+                                tool_name TEXT,
+                                arguments TEXT,
+                                duration_ms REAL,
+                                success BOOLEAN,
+                                stderr TEXT
+                            )"""
+                        )
+                        # Migrations for existing DBs
+                        import contextlib
 
-                    ts = start_time.isoformat()
-                    conn.execute(
-                        "INSERT INTO audit_log (timestamp, tool_name, arguments, "
-                        "duration_ms, success, stderr) VALUES (?, ?, ?, ?, ?, ?)",
-                        (
-                            ts,
-                            getattr(func, "__name__", str(func)),
-                            args_json,
-                            duration_ms,
-                            success,
-                            stderr,
-                        ),
-                    )
-            finally:
-                conn.close()
+                        for col, col_type in [
+                            ("duration_ms", "REAL"),
+                            ("success", "BOOLEAN"),
+                            ("stderr", "TEXT"),
+                        ]:
+                            with contextlib.suppress(sqlite3.OperationalError):
+                                conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
+
+                        ts = start_time.isoformat()
+                        conn.execute(
+                            "INSERT INTO audit_log (timestamp, tool_name, arguments, "
+                            "duration_ms, success, stderr) VALUES (?, ?, ?, ?, ?, ?)",
+                            (
+                                ts,
+                                getattr(func, "__name__", str(func)),
+                                args_json,
+                                duration_ms,
+                                success,
+                                stderr,
+                            ),
+                        )
+                finally:
+                    conn.close()
+            except Exception:
+                pass
 
     return cast(F, wrapper)
 
 
 @mcp.tool()
-@functools.lru_cache(maxsize=128)
+@_ttl_cache
 def gh_repo_list(args: RepoListArgs) -> str:
     """List repositories for an owner (user or organization).
 
@@ -166,8 +187,8 @@ def gh_repo_list(args: RepoListArgs) -> str:
 
 
 @mcp.tool()
-@functools.lru_cache(maxsize=128)
-def gh_repo_get(args: RepoArgs) -> str:
+@_ttl_cache
+def gh_repo_get(args: RepoGetArgs) -> str:
     """Get a single repository's metadata.
 
     Args:
@@ -305,6 +326,8 @@ def gh_pr_merge(args: PrMergeArgs) -> str:
         merge_method: ``squash``, ``merge``, or ``rebase``. Default is ``squash``.
         delete_branch: Delete the local and remote branch after merge.
     """
+    if not args.confirm:
+        raise ValueError("Must set confirm=True")
     repo = args.repo
     pr = args.pr
     merge_method = args.merge_method
@@ -675,6 +698,7 @@ def gh_review_threads_get(args: ReviewThreadsGetArgs) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
     """Reply to a PR inline review comment's thread (write).
 
@@ -703,6 +727,7 @@ def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def gh_review_thread_resolve(args: ReviewThreadResolveArgs) -> str:
     """Resolve a PR review thread by its node id (write).
 
@@ -746,6 +771,8 @@ def gh_graphql_query(args: GraphqlQueryArgs) -> str:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
+    if "mutation" in args.query.lower():
+        raise ValueError("Mutations are not allowed in gh_graphql_query")
     query = args.query
     jq_filter = args.jq_filter
     cmd_args = ["api", "graphql", "-f", f"query={query}"]

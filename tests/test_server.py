@@ -21,7 +21,7 @@ from mcp_servers.github.server import (
     PrCreateArgs,
     PrListArgs,
     PrMergeArgs,
-    RepoArgs,
+    RepoGetArgs,
     RepoListArgs,
     ReviewCommentReplyArgs,
     ReviewCommentsListArgs,
@@ -69,7 +69,8 @@ def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
 
 
 def test_list_repos(mocker: MockerFixture) -> None:
-    gh_repo_list.cache_clear()  # type: ignore
+    import mcp_servers.github.server
+    mcp_servers.github.server._CACHE.clear()
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo list")
     result = gh_repo_list(RepoListArgs(limit=5, owner="owner"))
     assert result == "mock repo list"
@@ -79,24 +80,29 @@ def test_list_repos(mocker: MockerFixture) -> None:
     assert "list" in args
     assert "owner" in args
     assert "5" in args
-    result2 = gh_repo_list(RepoListArgs(limit=5, owner="owner"))
-    assert result2 == "mock repo list"
+
+    # hit the cache
+    result_cache = gh_repo_list(RepoListArgs(limit=5, owner="owner"))
+    assert result_cache == "mock repo list"
     mock_run_gh.assert_called_once()
+
+    result2 = gh_repo_list(RepoListArgs(limit=5, owner="owner", no_cache=True))
+    assert result2 == "mock repo list"
+    assert mock_run_gh.call_count == 2
 
 
 def test_get_repo(mocker: MockerFixture) -> None:
-    gh_repo_get.cache_clear()  # type: ignore
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock repo view")
-    result = gh_repo_get(RepoArgs(repo="owner/repo"))
+    result = gh_repo_get(RepoGetArgs(repo="owner/repo"))
     assert result == "mock repo view"
     mock_run_gh.assert_called_once()
     args = mock_run_gh.call_args[0][0]
     assert "repo" in args
     assert "view" in args
     assert "owner/repo" in args
-    result2 = gh_repo_get(RepoArgs(repo="owner/repo"))
+    result2 = gh_repo_get(RepoGetArgs(repo="owner/repo", no_cache=True))
     assert result2 == "mock repo view"
-    mock_run_gh.assert_called_once()
+    assert mock_run_gh.call_count == 2
 
 
 def test_list_prs(mocker: MockerFixture) -> None:
@@ -190,7 +196,9 @@ def test_pr_comment(mocker: MockerFixture) -> None:
 def test_merge_pr(mocker: MockerFixture) -> None:
     mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock pr merge")
     result = gh_pr_merge(
-        PrMergeArgs(merge_method="rebase", delete_branch=True, repo="owner/repo", pr=123)
+        PrMergeArgs(
+            merge_method="rebase", delete_branch=True, repo="owner/repo", pr=123, confirm=True
+        )
     )
     assert result == "mock pr merge"
     mock_run_gh.assert_called_once()
@@ -207,7 +215,13 @@ def test_merge_pr_invalid_method(mocker: MockerFixture) -> None:
     import pytest
 
     with pytest.raises(ValueError, match="Invalid merge method"):
-        gh_pr_merge(PrMergeArgs(merge_method="invalid", repo="owner/repo", pr=123))
+        gh_pr_merge(PrMergeArgs(merge_method="invalid", repo="owner/repo", pr=123, confirm=True))
+
+def test_merge_pr_unconfirmed(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Must set confirm=True"):
+        gh_pr_merge(PrMergeArgs(merge_method="squash", repo="owner/repo", pr=123, confirm=False))
 
 
 def test_list_issues(mocker: MockerFixture) -> None:
@@ -479,6 +493,13 @@ def test_graphql_query(mocker: MockerFixture) -> None:
     assert ".data.viewer.login" in args
 
 
+def test_graphql_query_mutation(mocker: MockerFixture) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Mutations are not allowed"):
+        gh_graphql_query(GraphqlQueryArgs(query="mutation { update() }"))
+
+
 def test_main(mocker: MockerFixture) -> None:
     mock_run = mocker.patch("mcp_servers.github.server.mcp.run")
     main()
@@ -514,3 +535,24 @@ def test_audit_log_decorator(mocker: MockerFixture, tmp_path: pathlib.Path) -> N
     assert args["repo"] == "owner/repo"
     assert args["title"] == "My Issue"
     assert args["body"] == "Issue body"
+
+
+def test_audit_log_decorator_exception_in_db(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    mocker.patch("sqlite3.connect", side_effect=Exception("db error"))
+    result = gh_issue_create(
+        IssueCreateArgs(title="My Issue", body="Issue body", repo="owner/repo")
+    )
+    assert result == "mock issue create"
+    mock_run_gh.assert_called_once()
+
+
+def test_audit_log_decorator_non_model_arg(mocker: MockerFixture) -> None:
+    from mcp_servers.github.server import _audit_log
+
+    @_audit_log
+    def dummy_tool(my_arg: str) -> str:
+        return my_arg + "!"
+
+    result = dummy_tool("hello")
+    assert result == "hello!"
