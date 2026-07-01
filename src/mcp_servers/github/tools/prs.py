@@ -142,8 +142,6 @@ def gh_pr_merge(args: PrMergeArgs) -> str:
     merge_method = args.merge_method
     delete_branch = args.delete_branch
     validate_repo(repo)
-    if merge_method not in {"squash", "merge", "rebase"}:
-        raise ValueError(f"Invalid merge method: {merge_method}")
     cmd_args = ["pr", "merge", str(int(pr)), "-R", repo, f"--{merge_method}"]
     if delete_branch:
         cmd_args += ["--delete-branch"]

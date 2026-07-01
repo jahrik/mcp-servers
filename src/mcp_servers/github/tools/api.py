@@ -124,7 +124,7 @@ def gh_graphql_query(args: GraphqlQueryArgs) -> str:
         query: The GraphQL query string.
         jq_filter: Optional jq filter string to parse the response.
     """
-    if re.search(r"(?m)^\s*mutation\b", args.query, re.IGNORECASE):
+    if re.search(r"\bmutation\b", args.query, re.IGNORECASE):
         raise ValueError("Mutations are not allowed in gh_graphql_query")
     query = args.query
     jq_filter = args.jq_filter

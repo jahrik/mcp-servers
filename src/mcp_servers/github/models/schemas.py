@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing
 
 from pydantic import BaseModel, Field
@@ -23,7 +25,9 @@ class RepoGetArgs(BaseModel, frozen=True):
 
 class PrListArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
-    state: str = Field("open", description="``open``, ``closed``, ``merged``, or ``all``.")
+    state: typing.Literal["open", "closed", "merged", "all"] = Field(
+        "open", description="``open``, ``closed``, ``merged``, or ``all``."
+    )
     limit: int = Field(20, ge=1, le=100, description="Maximum number of PRs to return (1-100).")
 
 
@@ -50,7 +54,7 @@ class PrCommentArgs(BaseModel, frozen=True):
 class PrMergeArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     pr: int = Field(description="Pull request number.")
-    merge_method: str = Field(
+    merge_method: typing.Literal["squash", "merge", "rebase"] = Field(
         "squash", description="``squash``, ``merge``, or ``rebase``. Default is ``squash``."
     )
     delete_branch: bool = Field(
@@ -61,7 +65,9 @@ class PrMergeArgs(BaseModel, frozen=True):
 
 class IssueListArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
-    state: str = Field("open", description="``open``, ``closed``, or ``all``.")
+    state: typing.Literal["open", "closed", "all"] = Field(
+        "open", description="``open``, ``closed``, or ``all``."
+    )
     limit: int = Field(20, ge=1, le=100, description="Maximum number of issues to return (1-100).")
 
 

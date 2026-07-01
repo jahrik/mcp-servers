@@ -222,9 +222,10 @@ def test_merge_pr(mocker: MockerFixture) -> None:
 
 def test_merge_pr_invalid_method(mocker: MockerFixture) -> None:
     import pytest
+    from pydantic import ValidationError
 
-    with pytest.raises(ValueError, match="Invalid merge method"):
-        gh_pr_merge(PrMergeArgs(merge_method="invalid", repo="owner/repo", pr=123, confirm=True))
+    with pytest.raises(ValidationError):
+        PrMergeArgs(merge_method="invalid", repo="owner/repo", pr=123, confirm=True)  # type: ignore
 
 
 def test_merge_pr_unconfirmed(mocker: MockerFixture) -> None:
@@ -542,6 +543,9 @@ def test_graphql_query_mutation(mocker: MockerFixture) -> None:
 
     with pytest.raises(ValueError, match="Mutations are not allowed"):
         gh_graphql_query(GraphqlQueryArgs(query="# comment\n  mutation { update() }"))
+
+    with pytest.raises(ValueError, match="Mutations are not allowed"):
+        gh_graphql_query(GraphqlQueryArgs(query="query { viewer { login } } mutation { update() }"))
 
 
 def test_graphql_query_with_variables(mocker: MockerFixture) -> None:
