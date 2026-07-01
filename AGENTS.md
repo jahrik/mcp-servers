@@ -14,7 +14,7 @@ under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
 ```
 src/mcp_servers/
 ├── _common/          # shared helpers (gh runner, input validation) — reuse, don't copy
-├── github/           # read-only GitHub server (gh-backed) → mcp-github
+├── github/           # GitHub server (gh-backed) → mcp-github
 └── <next>/           # future servers live here
 tests/
 .github/workflows/ci.yml
