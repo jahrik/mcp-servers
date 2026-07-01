@@ -26,7 +26,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_servers._common import run_gh, validate_ref, validate_repo
 
-from .models import (
+from .models.schemas import (
     ApiGetArgs,
     FileGetArgs,
     GraphqlQueryArgs,
