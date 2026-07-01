@@ -12,6 +12,15 @@ branch — those stay out by design.
 
 from __future__ import annotations
 
+import functools
+import inspect
+import json
+import os
+import sqlite3
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any, cast
+
 from mcp.server.fastmcp import FastMCP
 
 from mcp_servers._common import run_gh, validate_ref, validate_repo
@@ -27,6 +36,43 @@ _REPO_FIELDS = (
     "name,nameWithOwner,description,url,isPrivate,isArchived,pushedAt,updatedAt,"
     "stargazerCount,forkCount,primaryLanguage"
 )
+
+def _audit_log[F: Callable[..., Any]](func: F) -> F:
+    """Decorator to audit log write tools to a SQLite DB."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        mcp_dir = os.path.expanduser("~/.mcp")
+        os.makedirs(mcp_dir, exist_ok=True)
+        db_path = os.path.join(mcp_dir, "audit.db")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            with conn:
+                conn.execute(
+                    '''CREATE TABLE IF NOT EXISTS audit_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT,
+                        tool_name TEXT,
+                        arguments TEXT
+                    )'''
+                )
+                ts = datetime.now(UTC).isoformat()
+                args_json = json.dumps(bound.arguments)
+                conn.execute(
+                    "INSERT INTO audit_log (timestamp, tool_name, arguments) VALUES (?, ?, ?)",
+                    (ts, getattr(func, "__name__", str(func)), args_json),
+                )
+        finally:
+            conn.close()
+
+        return func(*args, **kwargs)
+
+    return cast(F, wrapper)
 
 
 @mcp.tool()
@@ -115,6 +161,7 @@ def pr_checks(repo: str, number: int) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def create_pr(
     repo: str, title: str, body: str, head: str, base: str | None = None, draft: bool = False
 ) -> str:
@@ -138,6 +185,7 @@ def create_pr(
 
 
 @mcp.tool()
+@_audit_log
 def pr_comment(repo: str, pr: int, body: str) -> str:
     """Add a comment to a pull request.
 
@@ -151,6 +199,7 @@ def pr_comment(repo: str, pr: int, body: str) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def merge_pr(
     repo: str,
     pr: int,
@@ -211,6 +260,7 @@ def get_issue(repo: str, number: int) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def create_issue(repo: str, title: str, body: str) -> str:
     """Create an issue.
 
@@ -224,6 +274,7 @@ def create_issue(repo: str, title: str, body: str) -> str:
 
 
 @mcp.tool()
+@_audit_log
 def issue_comment(repo: str, issue: int, body: str) -> str:
     """Add a comment to an issue.
 

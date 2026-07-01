@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import pathlib
+
+import pytest
 from pytest_mock import MockerFixture
 
 from mcp_servers.github.server import (
@@ -33,6 +37,12 @@ from mcp_servers.github.server import (
     search_issues,
     search_prs,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_mcp_dir(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
+    """Ensure no test writes to the real ~/.mcp directory."""
+    mocker.patch("os.path.expanduser", return_value=str(tmp_path / ".mcp"))
 
 
 def test_list_repos(mocker: MockerFixture) -> None:
@@ -413,7 +423,9 @@ def test_api_get(mocker: MockerFixture) -> None:
 
 
 def test_graphql_query(mocker: MockerFixture) -> None:
-    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock graphql query")
+    mock_run_gh = mocker.patch(
+        "mcp_servers.github.server.run_gh", return_value="mock graphql query"
+    )
     result = graphql_query("query { viewer { login } }", jq_filter=".data.viewer.login")
     assert result == "mock graphql query"
     mock_run_gh.assert_called_once()
@@ -438,3 +450,27 @@ def test_main_block(mocker: MockerFixture) -> None:
     mock_run = mocker.patch("mcp.server.fastmcp.FastMCP.run")
     runpy.run_module("mcp_servers.github.server", run_name="__main__")
     mock_run.assert_called_once()
+
+
+def test_audit_log_decorator(mocker: MockerFixture, tmp_path: pathlib.Path) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock issue create")
+    result = create_issue("owner/repo", title="My Issue", body="Issue body")
+    assert result == "mock issue create"
+    mock_run_gh.assert_called_once()
+
+    import sqlite3
+    db_path = tmp_path / ".mcp" / "audit.db"
+    assert db_path.exists()
+
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute("SELECT timestamp, tool_name, arguments FROM audit_log").fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    ts, tool_name, args_json = rows[0]
+    assert tool_name == "create_issue"
+
+    args = json.loads(args_json)
+    assert args["repo"] == "owner/repo"
+    assert args["title"] == "My Issue"
+    assert args["body"] == "Issue body"
