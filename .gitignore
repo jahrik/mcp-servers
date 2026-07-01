@@ -14,3 +14,5 @@ dist/
 
 # local
 TODO.md
+pr.md
+.coverage
