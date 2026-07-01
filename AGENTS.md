@@ -34,6 +34,7 @@ tests/
   Never write a secret to a file; reuse the underlying tool's existing auth
   (e.g. `github` inherits `gh auth login`).
 - **No secrets, no hardcoded hosts/IPs** — same rules as the rest of the ecosystem.
+- **Prefer MCP servers over raw CLI:** AI agents should prefer using the tools provided by the `mcp-github` server over executing raw `gh` commands, as raw CLI usage might fail due to insufficient permissions.
 
 ## Adding a server
 

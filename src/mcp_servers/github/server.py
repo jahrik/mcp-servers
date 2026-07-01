@@ -76,7 +76,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
 
 
 @mcp.tool()
-def list_repos(owner: str, limit: int = 30) -> str:
+def gh_repo_list(owner: str, limit: int = 30) -> str:
     """List repositories for an owner (user or organization).
 
     Args:
@@ -88,7 +88,7 @@ def list_repos(owner: str, limit: int = 30) -> str:
 
 
 @mcp.tool()
-def get_repo(repo: str) -> str:
+def gh_repo_get(repo: str) -> str:
     """Get a single repository's metadata.
 
     Args:
@@ -99,7 +99,7 @@ def get_repo(repo: str) -> str:
 
 
 @mcp.tool()
-def list_prs(repo: str, state: str = "open", limit: int = 20) -> str:
+def gh_pr_list(repo: str, state: str = "open", limit: int = 20) -> str:
     """List pull requests for a repo.
 
     Args:
@@ -115,7 +115,7 @@ def list_prs(repo: str, state: str = "open", limit: int = 20) -> str:
 
 
 @mcp.tool()
-def get_pr(repo: str, number: int) -> str:
+def gh_pr_get(repo: str, number: int) -> str:
     """Get a single pull request's metadata (title, body, state, refs)."""
     validate_repo(repo)
     return run_gh(
@@ -132,14 +132,14 @@ def get_pr(repo: str, number: int) -> str:
 
 
 @mcp.tool()
-def pr_diff(repo: str, number: int) -> str:
+def gh_pr_diff(repo: str, number: int) -> str:
     """Get the unified diff for a pull request."""
     validate_repo(repo)
     return run_gh(["pr", "diff", str(int(number)), "-R", repo])
 
 
 @mcp.tool()
-def pr_checks(repo: str, number: int) -> str:
+def gh_pr_checks(repo: str, number: int) -> str:
     """Get the status of checks for a pull request.
 
     Args:
@@ -162,7 +162,7 @@ def pr_checks(repo: str, number: int) -> str:
 
 @mcp.tool()
 @_audit_log
-def create_pr(
+def gh_pr_create(
     repo: str, title: str, body: str, head: str, base: str | None = None, draft: bool = False
 ) -> str:
     """Create a pull request.
@@ -186,7 +186,7 @@ def create_pr(
 
 @mcp.tool()
 @_audit_log
-def pr_comment(repo: str, pr: int, body: str) -> str:
+def gh_pr_comment(repo: str, pr: int, body: str) -> str:
     """Add a comment to a pull request.
 
     Args:
@@ -200,7 +200,7 @@ def pr_comment(repo: str, pr: int, body: str) -> str:
 
 @mcp.tool()
 @_audit_log
-def merge_pr(
+def gh_pr_merge(
     repo: str,
     pr: int,
     merge_method: str = "squash",
@@ -224,7 +224,7 @@ def merge_pr(
 
 
 @mcp.tool()
-def list_issues(repo: str, state: str = "open", limit: int = 20) -> str:
+def gh_issue_list(repo: str, state: str = "open", limit: int = 20) -> str:
     """List issues for a repo.
 
     Args:
@@ -251,7 +251,7 @@ def list_issues(repo: str, state: str = "open", limit: int = 20) -> str:
 
 
 @mcp.tool()
-def get_issue(repo: str, number: int) -> str:
+def gh_issue_get(repo: str, number: int) -> str:
     """Get a single issue's metadata and body."""
     validate_repo(repo)
     return run_gh(
@@ -261,7 +261,7 @@ def get_issue(repo: str, number: int) -> str:
 
 @mcp.tool()
 @_audit_log
-def create_issue(repo: str, title: str, body: str) -> str:
+def gh_issue_create(repo: str, title: str, body: str) -> str:
     """Create an issue.
 
     Args:
@@ -275,7 +275,7 @@ def create_issue(repo: str, title: str, body: str) -> str:
 
 @mcp.tool()
 @_audit_log
-def issue_comment(repo: str, issue: int, body: str) -> str:
+def gh_issue_comment(repo: str, issue: int, body: str) -> str:
     """Add a comment to an issue.
 
     Args:
@@ -288,7 +288,7 @@ def issue_comment(repo: str, issue: int, body: str) -> str:
 
 
 @mcp.tool()
-def get_file(repo: str, path: str, ref: str = "HEAD") -> str:
+def gh_file_get(repo: str, path: str, ref: str = "HEAD") -> str:
     """Read a file's contents from a repo at a given ref.
 
     Args:
@@ -312,7 +312,7 @@ def get_file(repo: str, path: str, ref: str = "HEAD") -> str:
 
 
 @mcp.tool()
-def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
     """Search code on GitHub.
 
     Args:
@@ -329,7 +329,7 @@ def search_code(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 
 @mcp.tool()
-def search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
     """Search pull requests on GitHub.
 
     Args:
@@ -346,7 +346,7 @@ def search_prs(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 
 @mcp.tool()
-def search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
+def gh_search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
     """Search issues on GitHub.
 
     Args:
@@ -366,7 +366,7 @@ def search_issues(query: str, repo: str | None = None, limit: int = 20) -> str:
 
 
 @mcp.tool()
-def list_runs(
+def gh_run_list(
     repo: str, branch: str | None = None, workflow: str | None = None, limit: int = 20
 ) -> str:
     """List GitHub Actions workflow runs for a repo.
@@ -390,7 +390,7 @@ def list_runs(
 
 
 @mcp.tool()
-def get_run(repo: str, run_id: int) -> str:
+def gh_run_get(repo: str, run_id: int) -> str:
     """Get details of a specific GitHub Actions workflow run.
 
     Args:
@@ -412,7 +412,7 @@ def get_run(repo: str, run_id: int) -> str:
 
 
 @mcp.tool()
-def run_failed_logs(repo: str, run_id: int) -> str:
+def gh_run_failed_logs(repo: str, run_id: int) -> str:
     """Get the failed logs for a GitHub Actions workflow run.
 
     Args:
@@ -427,7 +427,7 @@ def run_failed_logs(repo: str, run_id: int) -> str:
 # The review loop (handle Copilot's inline comments on a PR): read the comments,
 # reply to one, mark its thread resolved. Replies use REST; reading threads and
 # resolving them need GraphQL (REST can't resolve a thread). `resolve` needs a
-# thread node id, which the caller gets from `get_review_threads` — so the four
+# thread node id, which the caller gets from `gh_review_threads_get` — so the four
 # tools are one read -> respond -> resolve loop.
 
 # Project the inline-comment fields the review loop actually needs, so output
@@ -458,7 +458,7 @@ def _review_comment_jq(*, bot_only: bool) -> str:
 
 # Read every review thread on a PR with its node id (needed to resolve), its
 # resolved/outdated state, and the comments it contains (databaseId ties a
-# thread back to a REST comment id from `list_review_comments`; __typename lets
+# thread back to a REST comment id from `gh_review_comments_list`; __typename lets
 # `bot_only` keep only threads with a bot comment).
 _THREADS_QUERY = """
 query($owner:String!,$name:String!,$pr:Int!){
@@ -487,7 +487,7 @@ mutation($threadId:ID!){
 
 
 @mcp.tool()
-def list_review_comments(repo: str, pr: int, bot_only: bool = False) -> str:
+def gh_review_comments_list(repo: str, pr: int, bot_only: bool = False) -> str:
     """List a PR's inline review comments (read-only).
 
     Returns one JSON object per comment with the ``id`` (needed to reply),
@@ -512,12 +512,12 @@ def list_review_comments(repo: str, pr: int, bot_only: bool = False) -> str:
 
 
 @mcp.tool()
-def get_review_threads(repo: str, pr: int, bot_only: bool = False) -> str:
+def gh_review_threads_get(repo: str, pr: int, bot_only: bool = False) -> str:
     """List a PR's review threads with ids and resolved state (read-only).
 
-    Each thread carries its node ``id`` (pass to ``resolve_review_thread``), its
+    Each thread carries its node ``id`` (pass to ``gh_review_thread_resolve``), its
     ``isResolved``/``isOutdated`` state, and the comments in it (each with a
-    ``databaseId`` matching a ``list_review_comments`` id).
+    ``databaseId`` matching a ``gh_review_comments_list`` id).
 
     Args:
         repo: Repository as ``owner/name``.
@@ -545,14 +545,14 @@ def get_review_threads(repo: str, pr: int, bot_only: bool = False) -> str:
 
 
 @mcp.tool()
-def reply_review_comment(repo: str, pr: int, comment_id: int, body: str) -> str:
+def gh_review_comment_reply(repo: str, pr: int, comment_id: int, body: str) -> str:
     """Reply to a PR inline review comment's thread (write).
 
     Args:
         repo: Repository as ``owner/name``.
         pr: Pull request number.
         comment_id: The review comment id to reply to (from
-            ``list_review_comments``).
+            ``gh_review_comments_list``).
         body: Reply text.
     """
     validate_repo(repo)
@@ -569,11 +569,11 @@ def reply_review_comment(repo: str, pr: int, comment_id: int, body: str) -> str:
 
 
 @mcp.tool()
-def resolve_review_thread(thread_id: str) -> str:
+def gh_review_thread_resolve(thread_id: str) -> str:
     """Resolve a PR review thread by its node id (write).
 
     Args:
-        thread_id: The review thread node id from ``get_review_threads``.
+        thread_id: The review thread node id from ``gh_review_threads_get``.
     """
     return run_gh(
         [
@@ -588,7 +588,7 @@ def resolve_review_thread(thread_id: str) -> str:
 
 
 @mcp.tool()
-def api_get(endpoint: str, jq_filter: str | None = None) -> str:
+def gh_api_get(endpoint: str, jq_filter: str | None = None) -> str:
     """Make a read-only GET request to the GitHub REST API.
 
     Args:
@@ -602,7 +602,7 @@ def api_get(endpoint: str, jq_filter: str | None = None) -> str:
 
 
 @mcp.tool()
-def graphql_query(query: str, jq_filter: str | None = None) -> str:
+def gh_graphql_query(query: str, jq_filter: str | None = None) -> str:
     """Make a read-only GraphQL query to the GitHub API.
 
     Args:
