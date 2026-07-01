@@ -8,9 +8,13 @@ from mcp_servers.github.server import (
     get_file,
     get_issue,
     get_pr,
+    get_review_threads,
     list_issues,
     list_prs,
+    list_review_comments,
     pr_diff,
+    reply_review_comment,
+    resolve_review_thread,
     search_code,
 )
 
@@ -94,3 +98,52 @@ def test_search_code(mocker: MockerFixture) -> None:
     assert "def foo" in args
     assert "owner/repo" in args
     assert "50" in args
+
+
+def test_list_review_comments(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock comments")
+    result = list_review_comments("owner/repo", 42)
+    assert result == "mock comments"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "repos/owner/repo/pulls/42/comments" in args
+    assert "--paginate" in args
+
+
+def test_get_review_threads(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock threads")
+    result = get_review_threads("owner/repo", 42)
+    assert result == "mock threads"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "graphql" in args
+    assert "owner=owner" in args
+    assert "name=repo" in args
+    assert "pr=42" in args
+    assert any(a.startswith("query=") and "reviewThreads" in a for a in args)
+
+
+def test_reply_review_comment(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock reply")
+    result = reply_review_comment("owner/repo", 42, 999, "thanks, fixed")
+    assert result == "mock reply"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "POST" in args
+    assert "repos/owner/repo/pulls/42/comments/999/replies" in args
+    assert "body=thanks, fixed" in args
+
+
+def test_resolve_review_thread(mocker: MockerFixture) -> None:
+    mock_run_gh = mocker.patch("mcp_servers.github.server.run_gh", return_value="mock resolved")
+    result = resolve_review_thread("PRRT_abc123")
+    assert result == "mock resolved"
+    mock_run_gh.assert_called_once()
+    args = mock_run_gh.call_args[0][0]
+    assert "api" in args
+    assert "graphql" in args
+    assert "threadId=PRRT_abc123" in args
+    assert any(a.startswith("query=") and "resolveReviewThread" in a for a in args)
