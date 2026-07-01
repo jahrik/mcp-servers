@@ -49,9 +49,12 @@ automatically via its `ai_agents_mcp_servers` variable (`type: stdio`, `command:
 
 ```bash
 uv sync
+uv run pre-commit install        # once per clone
 uv run ruff check .
 uv run ruff format .
+uv run ty check
 uv run pytest
+uvx pre-commit run --all-files   # every gate, as CI runs it
 ```
 
 ### Adding a server

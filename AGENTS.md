@@ -22,7 +22,8 @@ tests/
 
 ## Conventions
 
-- **Tooling:** `uv` for deps/venv; `ruff` for lint + format; `pytest` for tests.
+- **Tooling:** `uv` for deps/venv; `ruff` for lint + format; `ty` for type checking;
+  `pytest` for tests; `pre-commit` as the local gate wiring them together.
 - **Python:** 3.12+, type hints preferred, `from __future__ import annotations`.
 - **Servers are thin:** a server maps agent-facing tools onto an underlying CLI/API. Keep
   domain logic minimal; push shared plumbing into `_common`.
@@ -45,9 +46,12 @@ tests/
 
 ```bash
 uv sync
+uv run pre-commit install        # once per clone — runs the gates on commit
 uv run ruff check .
 uv run ruff format .
+uv run ty check
 uv run pytest
+uvx pre-commit run --all-files   # run every gate, as CI would
 ```
 
-CI runs ruff (check + format) and pytest on every PR.
+CI runs ruff (check + format), `ty`, and pytest on every PR.
