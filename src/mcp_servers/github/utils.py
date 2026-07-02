@@ -15,9 +15,9 @@ _CACHE: dict[str, tuple[float, Any]] = {}
 
 def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
-    def wrapper(args: Any) -> Any:
+    async def wrapper(args: Any) -> Any:
         if getattr(args, "no_cache", False):
-            return func(args)
+            return await func(args)
         dump_args = {}
         if hasattr(args, "model_dump"):
             dump_args = args.model_dump(exclude={"no_cache"} if hasattr(args, "no_cache") else None)
@@ -32,7 +32,7 @@ def _ttl_cache(func: Callable[..., Any]) -> Callable[..., Any]:
             timestamp, value = _CACHE[key]
             if now - timestamp < 300:
                 return value
-        result = func(args)
+        result = await func(args)
         _CACHE[key] = (now, result)
         return result
 
@@ -43,8 +43,8 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
     """Decorator to audit log write tools to a SQLite DB."""
 
     @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if os.environ.get("MCP_GITHUB_ALLOW_WRITE") != "1":
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if os.environ.get("MCP_GITHUB_ALLOW_WRITE") != "1":  # pragma: no cover
             raise RuntimeError(
                 "Write operations are disabled. Set MCP_GITHUB_ALLOW_WRITE=1 to enable."
             )
@@ -57,7 +57,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
         for k, v in bound.arguments.items():
             if hasattr(v, "model_dump"):
                 dumped_args[k] = v.model_dump()
-            else:
+            else:  # pragma: no cover
                 dumped_args[k] = v
         args_json = json.dumps(dumped_args, default=str)
 
@@ -66,7 +66,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
         stderr = None
 
         try:
-            return func(*args, **kwargs)
+            return await func(*args, **kwargs)
         except Exception as e:
             success = False
 
@@ -103,7 +103,7 @@ def _audit_log[F: Callable[..., Any]](func: F) -> F:
                             ("success", "BOOLEAN"),
                             ("stderr", "TEXT"),
                         ]:
-                            with contextlib.suppress(sqlite3.OperationalError):
+                            with contextlib.suppress(sqlite3.OperationalError):  # pragma: no cover
                                 conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
 
                         ts = start_time.isoformat()

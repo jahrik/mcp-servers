@@ -6,7 +6,7 @@ A small collection of focused, self-maintained [MCP](https://modelcontextprotoco
 servers — curated tools for AI coding agents, kept deliberately narrow.
 
 Each server lives as a subpackage under `src/mcp_servers/` and ships its own console
-script. One repo, one CI, one release — shared plumbing in `_common/`.
+script, owning its own plumbing (HTTP client, validation, caching). One repo, one CI, one release.
 
 ## Servers
 
@@ -16,7 +16,7 @@ script. One repo, one CI, one release — shared plumbing in `_common/`.
 
 ### `github`
 
-A GitHub server backed by the **`gh` CLI**. Reuses your existing `gh auth login` session to provide robust access to PRs, issues, files, code search, and review threads.
+An async Python GitHub server. Authenticates via a GitHub App using Installation Access Tokens, providing clear audit attribution for AI agent actions.
 
 [Read the detailed `github` server documentation](docs/github.md).
 
@@ -33,18 +33,38 @@ uv tool install --force git+https://github.com/jahrik/mcp-servers
 uv sync
 ```
 
-Requires the [`gh` CLI](https://cli.github.com/) on PATH and `gh auth login` completed.
+Requires a GitHub App, installed on the repos you want the agent to touch, with its credentials
+exported as `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`. See
+[Setup: create and install the GitHub App](docs/github.md#setup-create-and-install-the-github-app)
+for the full walkthrough (creating the App, generating a key, installing it, finding the
+installation ID).
 
 ## Register with an agent
 
-Any MCP client can launch a server over stdio. For Claude Code:
+Any MCP client can launch a server over stdio. The client needs to pass the three
+`GITHUB_APP_*` variables (see [Setup](docs/github.md#setup-create-and-install-the-github-app))
+into the server's environment — for Claude Code:
 
 ```bash
-claude mcp add-json --scope user github '{"command": "mcp-github", "args": []}'
+claude mcp add-json --scope user github '{
+  "command": "mcp-github",
+  "args": [],
+  "env": {
+    "GITHUB_APP_ID": "123456",
+    "GITHUB_APP_INSTALLATION_ID": "78901234",
+    "GITHUB_APP_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+  }
+}'
 ```
 
-The [`ansible-ai-agents`](https://github.com/jahrik/ansible-ai-agents) role wires these up
-automatically via its `ai_agents_mcp_servers` variable (`type: stdio`, `command: mcp-github`).
+Pull those values from wherever you actually store the secret (password manager, `pass`, vault)
+rather than pasting the key inline — `add-json` just needs the final JSON.
+
+If you use the [`ansible-ai-agents`](https://github.com/jahrik/ansible-ai-agents) role, it
+currently registers `github` via its `ai_agents_mcp_servers` variable (`type: stdio`,
+`command: mcp-github`) but doesn't yet manage GitHub App credentials for you — that role still
+assumes the old `gh auth login` model. Automated credential wiring for it is planned, not shipped;
+until then, set the three env vars yourself as shown above.
 
 ## Development
 
@@ -63,7 +83,8 @@ uvx pre-commit run --all-files   # every gate, as CI runs it
 1. Create `src/mcp_servers/<name>/server.py` with a `FastMCP` instance and a `main()` that calls `mcp.run()`.
    - For small servers, define `@mcp.tool()` functions directly in `server.py`.
    - For larger servers (like `github`), organize tools into a `tools/` module and import/register them in `server.py`.
-2. Reuse shared helpers from `mcp_servers._common` (add new ones there, not per-server).
+2. Put shared plumbing (HTTP client, validation, caching) in that server's own module — there's
+   no cross-server `_common` package.
 3. Add the console script under `[project.scripts]` in `pyproject.toml`.
 4. Add tests under `tests/` and a row to the table above.
 

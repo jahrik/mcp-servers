@@ -13,8 +13,10 @@ under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
 
 ```
 src/mcp_servers/
-├── _common/          # shared helpers (gh runner, input validation) — reuse, don't copy
-├── github/           # GitHub server (gh-backed) → mcp-github
+├── github/           # GitHub server (async httpx + GitHub App Auth) → mcp-github
+│   ├── auth.py       # JWT + Installation Access Token exchange
+│   ├── client.py     # shared httpx wrapper, validation, pagination — reuse, don't copy
+│   └── tools/        # one module per tool group (prs, issues, actions, reviews, ...)
 └── <next>/           # future servers live here
 tests/
 .github/workflows/ci.yml
@@ -26,13 +28,11 @@ tests/
   `pytest` for tests; `pre-commit` as the local gate wiring them together.
 - **Python:** 3.12+, type hints preferred, `from __future__ import annotations`.
 - **Servers are thin:** a server maps agent-facing tools onto an underlying CLI/API. Keep
-  domain logic minimal; push shared plumbing into `_common`.
+  domain logic minimal; push shared plumbing into that server's own `client.py`/`utils.py`
+  (there is no cross-server `_common` package — each server owns its plumbing).
 - **Default to read-only.** Add write/mutating tools deliberately, as separate `@mcp.tool()`
   functions, never as a side effect of a read tool.
-- **Security:** never build shell strings from model input — always pass an **argv list**
-  to `subprocess` (no `shell=True`). Validate identifiers (repo slugs, refs) before use.
-  Never write a secret to a file; reuse the underlying tool's existing auth
-  (e.g. `github` inherits `gh auth login`).
+- **Security:** use standard HTTP clients (e.g. `httpx`). Validate identifiers (repo slugs, refs) before use. Never write a secret to a file; authenticate via injected environment variables (e.g. GitHub App Installation Access Tokens).
 - **No secrets, no hardcoded hosts/IPs** — same rules as the rest of the ecosystem.
 - **Prefer MCP servers over raw CLI:** AI agents should prefer using the tools provided by the `mcp-github` server over executing raw `gh` commands, as raw CLI usage might fail due to insufficient permissions.
 
@@ -41,7 +41,7 @@ tests/
 1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")` entry point and `def main(): mcp.run()`.
 2. For small servers, put `@mcp.tool()` functions directly in `server.py`. For larger servers, extract logic into a `tools/` directory and register them in `server.py`.
 3. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
-4. Reuse/extend `_common`; add tests under `tests/`; update the README server table.
+4. Add tests under `tests/`; update the README server table.
 
 ## Commands
 

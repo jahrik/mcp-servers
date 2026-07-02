@@ -7,7 +7,10 @@ requires-python = ">=3.12,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "jahrik", email = "jahrik@gmail.com" }]
 dependencies = [
+    "httpx>=0.28.1",
+    "jq>=1.11.0",
     "mcp>=1.2.0",
+    "pyjwt>=2.13.0",
 ]
 
 [project.scripts]
@@ -23,6 +26,8 @@ dev = [
     "pytest-mock>=3.14.0",
     "ruff>=0.6.0",
     "ty>=0.0.55",
+    "pytest-asyncio>=1.4.0",
+    "pytest-httpx>=0.36.2",
 ]
 
 [build-system]
@@ -41,6 +46,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "PT"]
+ignore = ["E501", "PT011"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ty.environment]
+# `jq` is a C extension with no bundled type info; typings/jq.pyi covers it.
+extra-paths = ["typings"]

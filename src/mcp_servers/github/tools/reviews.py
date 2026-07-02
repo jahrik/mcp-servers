@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mcp_servers._common import run_gh, validate_repo
+import json
+
+from mcp_servers.github.client import gh_request, gh_request_paginated, validate_repo
 
 from ..models.schemas import (
     ReviewCommentReplyArgs,
@@ -9,26 +11,6 @@ from ..models.schemas import (
     ReviewThreadsGetArgs,
 )
 from ..utils import _audit_log
-
-_REVIEW_COMMENT_PROJECT = "{id, author: .user.login, path, line: (.line // .original_line), body}"
-_BOT_SELECT_REST = (
-    'select(.user.type == "Bot" or (.user.login | ascii_downcase | contains("copilot")))'
-)
-_BOT_THREAD_JQ = (
-    ".data.repository.pullRequest.reviewThreads.nodes |= "
-    "map(select(any(.comments.nodes[]; "
-    '.author.__typename == "Bot" or (.author.login | ascii_downcase | contains("copilot")))))'
-)
-
-
-def _review_comment_jq(*, bot_only: bool) -> str:
-    """`gh api --jq` program that projects (and optionally bot-filters) comments."""
-    stages = [".[]"]
-    if bot_only:
-        stages.append(_BOT_SELECT_REST)
-    stages.append(_REVIEW_COMMENT_PROJECT)
-    return " | ".join(stages)
-
 
 _THREADS_QUERY = """
 query($owner:String!,$name:String!,$pr:Int!){
@@ -56,79 +38,77 @@ mutation($threadId:ID!){
 """
 
 
-def gh_review_comments_list(args: ReviewCommentsListArgs) -> str:
-    """List a PR's inline review comments (read-only).
-
-    Returns one JSON object per comment with the ``id`` (needed to reply),
-    author, ``path``, ``line``, and body.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        bot_only: Keep only bot/Copilot comments — the actionable ones in an
-            automated review.
-    """
+async def gh_review_comments_list(args: ReviewCommentsListArgs) -> str:
+    """List a PR's inline review comments (read-only)."""
     repo = args.repo
     pr = args.pr
     bot_only = args.bot_only
     validate_repo(repo)
-    return run_gh(
-        [
-            "api",
-            f"repos/{repo}/pulls/{int(pr)}/comments",
-            "--paginate",
-            "--jq",
-            _review_comment_jq(bot_only=bot_only),
-        ]
-    )
+
+    comments = await gh_request_paginated("GET", f"repos/{repo}/pulls/{int(pr)}/comments")
+
+    results = []
+    for c in comments:
+        user = c.get("user", {})
+        login = user.get("login", "")
+        if bot_only:
+            is_bot = user.get("type") == "Bot" or "copilot" in login.lower()
+            if not is_bot:
+                continue
+        results.append(
+            {
+                "id": c.get("id"),
+                "author": login,
+                "path": c.get("path"),
+                "line": c.get("line") or c.get("original_line"),
+                "body": c.get("body"),
+            }
+        )
+    return "\n".join(json.dumps(r) for r in results)
 
 
-def gh_review_threads_get(args: ReviewThreadsGetArgs) -> str:
-    """List a PR's review threads with ids and resolved state (read-only).
-
-    Each thread carries its node ``id`` (pass to ``gh_review_thread_resolve``), its
-    ``isResolved``/``isOutdated`` state, and the comments in it (each with a
-    ``databaseId`` matching a ``gh_review_comments_list`` id).
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        bot_only: Keep only threads that contain a bot/Copilot comment.
-    """
+async def gh_review_threads_get(args: ReviewThreadsGetArgs) -> str:
+    """List a PR's review threads with ids and resolved state (read-only)."""
     repo = args.repo
     pr = args.pr
     bot_only = args.bot_only
     validate_repo(repo)
     owner, _, name = repo.partition("/")
-    cmd_args = [
-        "api",
-        "graphql",
-        "-f",
-        f"owner={owner}",
-        "-f",
-        f"name={name}",
-        "-F",
-        f"pr={int(pr)}",
-        "-f",
-        f"query={_THREADS_QUERY}",
-    ]
-    if bot_only:
-        # Filter thread nodes in place, preserving the response envelope.
-        cmd_args += ["--jq", _BOT_THREAD_JQ]
-    return run_gh(cmd_args)
+
+    payload = {"query": _THREADS_QUERY, "variables": {"owner": owner, "name": name, "pr": int(pr)}}
+    resp = await gh_request("POST", "graphql", json=payload)
+    data = resp.json()
+
+    if (
+        bot_only
+        and "data" in data
+        and data["data"].get("repository")
+        and data["data"]["repository"].get("pullRequest")
+        and data["data"]["repository"]["pullRequest"].get("reviewThreads")
+        and data["data"]["repository"]["pullRequest"]["reviewThreads"].get("nodes")
+    ):
+        nodes = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+        filtered_nodes = []
+        for node in nodes:
+            keep = False
+            for c in node.get("comments", {}).get("nodes", []):
+                author = c.get("author", {}) or {}
+                if (
+                    author.get("__typename") == "Bot"
+                    or "copilot" in author.get("login", "").lower()
+                ):
+                    keep = True
+                    break
+            if keep:
+                filtered_nodes.append(node)
+        data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = filtered_nodes
+
+    return json.dumps(data)
 
 
 @_audit_log
-def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
-    """Reply to a PR inline review comment's thread (write).
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        comment_id: The review comment id to reply to (from
-            ``gh_review_comments_list``).
-        body: Reply text.
-    """
+async def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
+    """Reply to a PR inline review comment's thread (write)."""
     repo = args.repo
     pr = args.pr
     comment_id = args.comment_id
@@ -136,35 +116,21 @@ def gh_review_comment_reply(args: ReviewCommentReplyArgs) -> str:
     if body.lstrip().startswith("@"):
         raise ValueError("Body cannot start with '@'")
     validate_repo(repo)
-    return run_gh(
-        [
-            "api",
-            "-X",
-            "POST",
-            f"repos/{repo}/pulls/{int(pr)}/comments/{int(comment_id)}/replies",
-            "-f",
-            f"body={body}",
-        ]
+    resp = await gh_request(
+        "POST",
+        f"repos/{repo}/pulls/{int(pr)}/comments/{int(comment_id)}/replies",
+        json={"body": body},
     )
+    return json.dumps(resp.json())
 
 
 @_audit_log
-def gh_review_thread_resolve(args: ReviewThreadResolveArgs) -> str:
-    """Resolve a PR review thread by its node id (write).
-
-    Args:
-        thread_id: The review thread node id from ``gh_review_threads_get``.
-    """
+async def gh_review_thread_resolve(args: ReviewThreadResolveArgs) -> str:
+    """Resolve a PR review thread by its node id (write)."""
     thread_id = args.thread_id
     if thread_id.lstrip().startswith("@"):
         raise ValueError("Thread ID cannot start with '@'")
-    return run_gh(
-        [
-            "api",
-            "graphql",
-            "-f",
-            f"threadId={thread_id}",
-            "-f",
-            f"query={_RESOLVE_MUTATION}",
-        ]
-    )
+
+    payload = {"query": _RESOLVE_MUTATION, "variables": {"threadId": thread_id}}
+    resp = await gh_request("POST", "graphql", json=payload)
+    return json.dumps(resp.json())

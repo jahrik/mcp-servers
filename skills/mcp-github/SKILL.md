@@ -9,12 +9,13 @@ When interacting with GitHub (e.g., listing PRs, reading issues, commenting, rev
 
 ## Why?
 
-Agents run in sandboxed environments or might not have direct, interactive terminal access to authenticate `gh` correctly. Raw `gh` commands might fail due to insufficient permissions or missing authentication context in the active shell. The `mcp-github` server, however, is properly configured by the host to safely access GitHub resources.
+Agents run in sandboxed environments or might not have direct, interactive terminal access to authenticate `gh` correctly. Raw `gh` commands might fail due to insufficient permissions or missing authentication context in the active shell. The `mcp-github` server is configured by the host to access GitHub resources.
 
-Furthermore, the server implements several production hardening features to provide a safer and more reliable experience:
-- **Rich Schema Validation**: Uses Pydantic to strictly validate inputs (like invalid repo names) before shelling out, preventing malformed inputs and potential errors.
+## Features
+
+- **Schema Validation**: Uses Pydantic to validate inputs (like invalid repo names) before hitting the GitHub API, rejecting malformed inputs.
 - **Enhanced Audit Logging**: The SQLite audit log captures execution duration, success status, and full stderr for complete observability.
-- **Actionable Error Handling**: On failure, the server returns AI-friendly hints and clear context rather than raw stack traces, helping agents self-correct.
+- **Error Handling**: On failure, the server returns context rather than raw stack traces.
 
 ## Best Practices
 
