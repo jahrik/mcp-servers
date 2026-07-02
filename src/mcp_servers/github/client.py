@@ -74,7 +74,9 @@ async def gh_request(method: str, endpoint: str, **kwargs: Any) -> httpx.Respons
     else:
         url = endpoint
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    # follow_redirects: several endpoints (e.g. job logs) 302 to blob storage — httpx
+    # doesn't follow redirects by default, which silently truncates those responses.
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
         response = await client.request(method, url, headers=headers, **kwargs)
 
         if response.is_error:

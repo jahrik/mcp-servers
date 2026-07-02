@@ -56,6 +56,27 @@ async def test_gh_request(httpx_mock, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gh_request_follows_redirects(httpx_mock, monkeypatch):
+    """Job-log downloads 302 to blob storage — gh_request must follow that."""
+    import mcp_servers.github.client
+
+    async def mock_token():
+        return "mock-token"
+
+    monkeypatch.setattr(mcp_servers.github.client, "get_installation_token", mock_token)
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/owner/repo/actions/jobs/1/logs",
+        status_code=302,
+        headers={"Location": "https://blob.example.com/logs.txt"},
+    )
+    httpx_mock.add_response(url="https://blob.example.com/logs.txt", text="log output")
+
+    resp = await gh_request("GET", "repos/owner/repo/actions/jobs/1/logs")
+    assert resp.text == "log output"
+
+
+@pytest.mark.asyncio
 async def test_gh_request_error(httpx_mock, monkeypatch):
     import mcp_servers.github.client
 

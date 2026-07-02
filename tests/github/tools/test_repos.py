@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from mcp_servers.github.client import GhError
 from mcp_servers.github.models.schemas import RepoGetArgs, RepoListArgs
 from mcp_servers.github.tools.repos import gh_repo_get, gh_repo_list
 
@@ -43,6 +44,17 @@ async def test_gh_repo_list_falls_back_to_user(httpx_mock):
     data = json.loads(res)
     assert len(data) == 1
     assert data[0]["name"] == "repo1"
+
+
+@pytest.mark.asyncio
+async def test_gh_repo_list_reraises_non_404(httpx_mock):
+    httpx_mock.add_response(
+        url="https://api.github.com/orgs/octocat/repos?per_page=10&sort=pushed",
+        status_code=500,
+        text="Internal Server Error",
+    )
+    with pytest.raises(GhError, match="500"):
+        await gh_repo_list(RepoListArgs(owner="octocat", limit=10, no_cache=True))
 
 
 @pytest.mark.asyncio
