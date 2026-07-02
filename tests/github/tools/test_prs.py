@@ -188,3 +188,16 @@ async def test_gh_pr_merge_no_confirm(monkeypatch):
     monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     with pytest.raises(ValueError):
         await gh_pr_merge(PrMergeArgs(repo="octocat/repo", pr=1, confirm=False))
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_checks_missing_sha(httpx_mock):
+    """If the PR head SHA is absent, gh_pr_checks must raise a descriptive GhError."""
+    from mcp_servers.github.client import GhError
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1",
+        json={"head": {}},  # no sha key
+    )
+    with pytest.raises(GhError, match="PR head SHA unavailable"):
+        await gh_pr_checks(PrArgs(repo="octocat/repo", number=1))

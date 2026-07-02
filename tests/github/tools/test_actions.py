@@ -90,3 +90,22 @@ async def test_gh_run_failed_logs_none(httpx_mock):
     )
     res = await gh_run_failed_logs(RunArgs(repo="octocat/repo", run_id=1))
     assert "No failed jobs found" in res
+
+
+@pytest.mark.asyncio
+async def test_gh_run_failed_logs_non404_error_propagates(httpx_mock):
+    """Non-404 errors (auth failures, 5xx) must propagate instead of being swallowed."""
+    from mcp_servers.github.client import GhError
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
+        json={"jobs": [{"id": 10, "name": "test", "conclusion": "failure"}]},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/jobs/10/logs",
+        status_code=500,
+        text="Internal Server Error",
+    )
+    with pytest.raises(GhError) as exc_info:
+        await gh_run_failed_logs(RunArgs(repo="octocat/repo", run_id=1))
+    assert exc_info.value.status_code == 500

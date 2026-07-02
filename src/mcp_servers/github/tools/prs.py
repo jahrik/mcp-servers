@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mcp_servers.github.client import gh_request, validate_repo
+from mcp_servers.github.client import GhError, gh_request, validate_repo
 
 from ..models.schemas import (
     PrArgs,
@@ -116,6 +116,8 @@ async def gh_pr_checks(args: PrArgs) -> str:
 
     pr_resp = await gh_request("GET", f"repos/{repo}/pulls/{number}")
     sha = pr_resp.json().get("head", {}).get("sha")
+    if not sha:
+        raise GhError("PR head SHA unavailable — the source branch or fork may have been deleted")
 
     checks_resp = await gh_request("GET", f"repos/{repo}/commits/{sha}/check-runs")
     check_runs = checks_resp.json().get("check_runs", [])

