@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-from mcp_servers._common import run_gh, validate_repo
+import json
+
+from mcp_servers.github.client import GhError, gh_request, validate_repo
 
 from ..models.schemas import RepoGetArgs, RepoListArgs
 from ..utils import _ttl_cache
 
-_REPO_FIELDS = (
-    "name,nameWithOwner,description,url,isPrivate,isArchived,pushedAt,updatedAt,"
-    "stargazerCount,forkCount,primaryLanguage"
-)
-
 
 @_ttl_cache
-def gh_repo_list(args: RepoListArgs) -> str:
+async def gh_repo_list(args: RepoListArgs) -> str:
     """List repositories for an owner (user or organization).
 
     Args:
@@ -22,11 +19,38 @@ def gh_repo_list(args: RepoListArgs) -> str:
     owner = args.owner
     limit = args.limit
     limit = max(1, min(limit, 100))
-    return run_gh(["repo", "list", owner, "--limit", str(limit), "--json", _REPO_FIELDS])
+    params = {"per_page": limit, "sort": "pushed"}
+    try:
+        # Organizations first — `/orgs/{org}/repos` also returns private repos the App
+        # installation can see, which `search/repositories` does not reliably surface.
+        resp = await gh_request("GET", f"orgs/{owner}/repos", params=params)
+    except GhError as e:
+        if e.status_code != 404:
+            raise
+        resp = await gh_request("GET", f"users/{owner}/repos", params=params)
+    items = resp.json()
+    results = []
+    for r in items:
+        results.append(
+            {
+                "name": r.get("name"),
+                "nameWithOwner": r.get("full_name"),
+                "description": r.get("description"),
+                "url": r.get("html_url"),
+                "isPrivate": r.get("private"),
+                "isArchived": r.get("archived"),
+                "pushedAt": r.get("pushed_at"),
+                "updatedAt": r.get("updated_at"),
+                "stargazerCount": r.get("stargazers_count"),
+                "forkCount": r.get("forks_count"),
+                "primaryLanguage": {"name": r.get("language")} if r.get("language") else None,
+            }
+        )
+    return json.dumps(results)
 
 
 @_ttl_cache
-def gh_repo_get(args: RepoGetArgs) -> str:
+async def gh_repo_get(args: RepoGetArgs) -> str:
     """Get a single repository's metadata.
 
     Args:
@@ -34,4 +58,19 @@ def gh_repo_get(args: RepoGetArgs) -> str:
     """
     repo = args.repo
     validate_repo(repo)
-    return run_gh(["repo", "view", repo, "--json", _REPO_FIELDS])
+    resp = await gh_request("GET", f"repos/{repo}")
+    r = resp.json()
+    result = {
+        "name": r.get("name"),
+        "nameWithOwner": r.get("full_name"),
+        "description": r.get("description"),
+        "url": r.get("html_url"),
+        "isPrivate": r.get("private"),
+        "isArchived": r.get("archived"),
+        "pushedAt": r.get("pushed_at"),
+        "updatedAt": r.get("updated_at"),
+        "stargazerCount": r.get("stargazers_count"),
+        "forkCount": r.get("forks_count"),
+        "primaryLanguage": {"name": r.get("language")} if r.get("language") else None,
+    }
+    return json.dumps(result)

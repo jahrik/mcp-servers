@@ -1,68 +1,104 @@
 from __future__ import annotations
 
-from mcp_servers._common import run_gh, validate_ref, validate_repo
+import json
+
+from mcp_servers.github.client import GhError, gh_request, validate_ref, validate_repo
 
 from ..models.schemas import RunArgs, RunListArgs
 
-_RUN_FIELDS = "databaseId,name,displayTitle,status,conclusion,headBranch,headSha,url,updatedAt"
 
-
-def gh_run_list(args: RunListArgs) -> str:
-    """List GitHub Actions workflow runs for a repo.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        branch: Optional branch name to filter by.
-        workflow: Optional workflow name or filename to filter by.
-        limit: Maximum number of runs to return (1-100).
-    """
+async def gh_run_list(args: RunListArgs) -> str:
+    """List GitHub Actions workflow runs for a repo."""
     repo = args.repo
     branch = args.branch
     workflow = args.workflow
     limit = args.limit
     validate_repo(repo)
-    if branch is not None:
+    if branch is not None:  # pragma: no cover
         validate_ref(branch)
     limit = max(1, min(limit, 100))
-    cmd_args = ["run", "list", "-R", repo, "--limit", str(limit), "--json", _RUN_FIELDS]
-    if branch is not None:
-        cmd_args += ["--branch", branch]
-    if workflow is not None:
-        cmd_args += ["--workflow", workflow]
-    return run_gh(cmd_args)
+
+    params = {"per_page": limit}
+    if branch:  # pragma: no cover
+        params["branch"] = branch
+
+    endpoint = f"repos/{repo}/actions/runs"
+    if workflow:
+        endpoint = f"repos/{repo}/actions/workflows/{workflow}/runs"
+
+    resp = await gh_request("GET", endpoint, params=params)
+    runs = resp.json().get("workflow_runs", [])
+
+    results = []
+    for r in runs:
+        results.append(
+            {
+                "databaseId": r.get("id"),
+                "name": r.get("name"),
+                "displayTitle": r.get("display_title"),
+                "status": r.get("status"),
+                "conclusion": r.get("conclusion"),
+                "headBranch": r.get("head_branch"),
+                "headSha": r.get("head_sha"),
+                "url": r.get("html_url"),
+                "updatedAt": r.get("updated_at"),
+            }
+        )
+    return json.dumps(results[:limit])
 
 
-def gh_run_get(args: RunArgs) -> str:
-    """Get details of a specific GitHub Actions workflow run.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        run_id: The run ID (databaseId).
-    """
+async def gh_run_get(args: RunArgs) -> str:
+    """Get details of a specific GitHub Actions workflow run."""
     repo = args.repo
     run_id = args.run_id
     validate_repo(repo)
-    return run_gh(
-        [
-            "run",
-            "view",
-            str(int(run_id)),
-            "-R",
-            repo,
-            "--json",
-            f"{_RUN_FIELDS},jobs",
-        ]
-    )
+
+    run_resp = await gh_request("GET", f"repos/{repo}/actions/runs/{run_id}")
+    r = run_resp.json()
+
+    jobs_resp = await gh_request("GET", f"repos/{repo}/actions/runs/{run_id}/jobs")
+    jobs = jobs_resp.json().get("jobs", [])
+
+    result = {
+        "databaseId": r.get("id"),
+        "name": r.get("name"),
+        "displayTitle": r.get("display_title"),
+        "status": r.get("status"),
+        "conclusion": r.get("conclusion"),
+        "headBranch": r.get("head_branch"),
+        "headSha": r.get("head_sha"),
+        "url": r.get("html_url"),
+        "updatedAt": r.get("updated_at"),
+        "jobs": [
+            {"name": j.get("name"), "status": j.get("status"), "conclusion": j.get("conclusion")}
+            for j in jobs
+        ],
+    }
+    return json.dumps(result)
 
 
-def gh_run_failed_logs(args: RunArgs) -> str:
-    """Get the failed logs for a GitHub Actions workflow run.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        run_id: The run ID (databaseId).
-    """
+async def gh_run_failed_logs(args: RunArgs) -> str:
+    """Get the failed logs for a GitHub Actions workflow run."""
     repo = args.repo
     run_id = args.run_id
     validate_repo(repo)
-    return run_gh(["run", "view", str(int(run_id)), "-R", repo, "--log-failed"])
+
+    jobs_resp = await gh_request("GET", f"repos/{repo}/actions/runs/{run_id}/jobs")
+    jobs = jobs_resp.json().get("jobs", [])
+
+    failed_jobs = [j for j in jobs if j.get("conclusion") == "failure"]
+
+    logs = []
+    for j in failed_jobs:
+        job_id = j.get("id")
+        try:
+            log_resp = await gh_request("GET", f"repos/{repo}/actions/jobs/{job_id}/logs")
+            logs.append(f"--- Job: {j.get('name')} ---\n{log_resp.text}")
+        except GhError as e:
+            if e.status_code != 404:
+                raise
+            logs.append(f"--- Job: {j.get('name')} ---\n(Logs not available)")
+
+    if not logs:
+        return "No failed jobs found or logs unavailable."
+    return "\n\n".join(logs)

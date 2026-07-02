@@ -2,8 +2,8 @@
 
 Exposes the handful of operations an agent actually reaches for during code
 work — reads plus a narrow set of writes — rather than the full GitHub API
-surface. Every tool shells out to `gh`, so it authenticates with your existing
-`gh auth login` session and needs no token.
+surface. It operates as a pure-Python async HTTP server, authenticating via
+a GitHub App using dynamically generated Installation Access Tokens.
 
 Writes are added deliberately, one tool at a time, and are audit-logged to a local
 SQLite database. Write operations are disabled by default and must be explicitly
@@ -53,5 +53,5 @@ def main() -> None:
     mcp.run()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

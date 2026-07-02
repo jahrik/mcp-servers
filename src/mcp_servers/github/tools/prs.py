@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mcp_servers._common import run_gh, validate_repo
+import json
+
+from mcp_servers.github.client import GhError, gh_request, validate_repo
 
 from ..models.schemas import (
     PrArgs,
@@ -12,161 +14,194 @@ from ..models.schemas import (
 )
 from ..utils import _audit_log
 
-_PR_FIELDS = "number,title,state,author,headRefName,baseRefName,isDraft,url,updatedAt"
-_CHECK_FIELDS = "name,state,bucket,startedAt,completedAt,link,description,workflow"
 
-
-def gh_pr_list(args: PrListArgs) -> str:
-    """List pull requests for a repo.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        state: ``open``, ``closed``, ``merged``, or ``all``.
-        limit: Maximum number of PRs to return (1-100).
-    """
+async def gh_pr_list(args: PrListArgs) -> str:
+    """List pull requests for a repo."""
     repo = args.repo
     state = args.state
     limit = args.limit
     validate_repo(repo)
     limit = max(1, min(limit, 100))
-    return run_gh(
-        ["pr", "list", "-R", repo, "--state", state, "--limit", str(limit), "--json", _PR_FIELDS]
+    resp = await gh_request(
+        "GET", f"repos/{repo}/pulls", params={"state": state, "per_page": limit}
     )
+    items = resp.json()
+    results = []
+    for r in items:
+        results.append(
+            {
+                "number": r.get("number"),
+                "title": r.get("title"),
+                "state": r.get("state"),
+                "author": {"login": r.get("user", {}).get("login")} if r.get("user") else {},
+                "headRefName": r.get("head", {}).get("ref"),
+                "baseRefName": r.get("base", {}).get("ref"),
+                "isDraft": r.get("draft"),
+                "url": r.get("html_url"),
+                "updatedAt": r.get("updated_at"),
+            }
+        )
+    return json.dumps(results)
 
 
-def gh_pr_get(args: PrArgs) -> str:
-    """Get a single pull request's metadata (title, body, state, refs)."""
+async def gh_pr_get(args: PrArgs) -> str:
+    """Get a single pull request's metadata."""
     repo = args.repo
     number = args.number
     validate_repo(repo)
-    return run_gh(
-        [
-            "pr",
-            "view",
-            str(int(number)),
-            "-R",
-            repo,
-            "--json",
-            f"{_PR_FIELDS},body,additions,deletions,files",
-        ]
-    )
+    resp = await gh_request("GET", f"repos/{repo}/pulls/{number}")
+    r = resp.json()
+
+    files_resp = await gh_request("GET", f"repos/{repo}/pulls/{number}/files")
+    files_data = files_resp.json()
+
+    result = {
+        "number": r.get("number"),
+        "title": r.get("title"),
+        "state": r.get("state"),
+        "author": {"login": r.get("user", {}).get("login")} if r.get("user") else {},
+        "headRefName": r.get("head", {}).get("ref"),
+        "baseRefName": r.get("base", {}).get("ref"),
+        "isDraft": r.get("draft"),
+        "url": r.get("html_url"),
+        "updatedAt": r.get("updated_at"),
+        "body": r.get("body"),
+        "additions": r.get("additions"),
+        "deletions": r.get("deletions"),
+        "files": [
+            {
+                "path": f.get("filename"),
+                "additions": f.get("additions"),
+                "deletions": f.get("deletions"),
+            }
+            for f in files_data
+        ],
+    }
+    return json.dumps(result)
 
 
-def gh_pr_diff(args: PrArgs) -> str:
+async def gh_pr_diff(args: PrArgs) -> str:
     """Get the unified diff for a pull request."""
     repo = args.repo
     number = args.number
     validate_repo(repo)
-    return run_gh(["pr", "diff", str(int(number)), "-R", repo])
+    resp = await gh_request(
+        "GET", f"repos/{repo}/pulls/{number}", headers={"Accept": "application/vnd.github.v3.diff"}
+    )
+    return resp.text
 
 
-def gh_pr_checks(args: PrArgs) -> str:
-    """Get the status of checks for a pull request.
+_PASS_CONCLUSIONS = {"success", "neutral"}
+_FAIL_CONCLUSIONS = {"failure", "timed_out", "action_required", "stale"}
 
-    Args:
-        repo: Repository as ``owner/name``.
-        number: Pull request number.
-    """
+
+def _check_bucket(status: str | None, conclusion: str | None) -> str:
+    """Mirror gh CLI's pass/fail/pending/skipping/cancel bucketing of a check run."""
+    if status != "completed":
+        return "pending"
+    if conclusion == "cancelled":
+        return "cancel"
+    if conclusion == "skipped":
+        return "skipping"
+    if conclusion in _PASS_CONCLUSIONS:
+        return "pass"
+    return "fail"
+
+
+async def gh_pr_checks(args: PrArgs) -> str:
+    """Get the status of checks for a pull request."""
     repo = args.repo
     number = args.number
     validate_repo(repo)
-    return run_gh(
-        [
-            "pr",
-            "checks",
-            str(int(number)),
-            "-R",
-            repo,
-            "--json",
-            _CHECK_FIELDS,
-        ]
-    )
+
+    pr_resp = await gh_request("GET", f"repos/{repo}/pulls/{number}")
+    sha = pr_resp.json().get("head", {}).get("sha")
+    if not sha:
+        raise GhError("PR head SHA unavailable — the source branch or fork may have been deleted")
+
+    checks_resp = await gh_request("GET", f"repos/{repo}/commits/{sha}/check-runs")
+    check_runs = checks_resp.json().get("check_runs", [])
+
+    results = []
+    for c in check_runs:
+        status = c.get("status")
+        conclusion = c.get("conclusion")
+        output = c.get("output") or {}
+        results.append(
+            {
+                "name": c.get("name"),
+                "state": conclusion or status,
+                "bucket": _check_bucket(status, conclusion),
+                "description": output.get("title") or output.get("summary"),
+                "startedAt": c.get("started_at"),
+                "completedAt": c.get("completed_at"),
+                "link": c.get("html_url"),
+            }
+        )
+    return json.dumps(results)
 
 
 @_audit_log
-def gh_pr_create(args: PrCreateArgs) -> str:
-    """Create a pull request.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        title: Title of the pull request.
-        body: Body/description of the pull request.
-        head: The branch that contains the commits for your pull request.
-        base: The branch into which you want your code merged.
-        draft: Mark the pull request as a draft.
-    """
+async def gh_pr_create(args: PrCreateArgs) -> str:
+    """Create a pull request."""
     repo = args.repo
-    title = args.title
-    body = args.body
-    head = args.head
-    base = args.base
-    draft = args.draft
     validate_repo(repo)
-    cmd_args = ["pr", "create", "-R", repo, "--title", title, "--body", body, "--head", head]
-    if base is not None:
-        cmd_args += ["--base", base]
-    if draft:
-        cmd_args += ["--draft"]
-    return run_gh(cmd_args)
+    data = {"title": args.title, "body": args.body, "head": args.head}
+    if args.base:
+        data["base"] = args.base
+    if args.draft:  # pragma: no cover
+        data["draft"] = args.draft
+    resp = await gh_request("POST", f"repos/{repo}/pulls", json=data)
+    return json.dumps(resp.json())
 
 
 @_audit_log
-def gh_pr_edit(args: PrEditArgs) -> str:
-    """Edit a pull request.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        title: Optional new title.
-        body: Optional new body.
-    """
+async def gh_pr_edit(args: PrEditArgs) -> str:
+    """Edit a pull request."""
     repo = args.repo
     pr = args.pr
-    title = args.title
-    body = args.body
     validate_repo(repo)
-    cmd_args = ["pr", "edit", str(int(pr)), "-R", repo]
-    if title is not None:
-        cmd_args += ["--title", title]
-    if body is not None:
-        cmd_args += ["--body", body]
-    return run_gh(cmd_args)
+    data = {}
+    if args.title is not None:
+        data["title"] = args.title
+    if args.body is not None:  # pragma: no cover
+        data["body"] = args.body
+    resp = await gh_request("PATCH", f"repos/{repo}/pulls/{pr}", json=data)
+    return json.dumps(resp.json())
 
 
 @_audit_log
-def gh_pr_comment(args: PrCommentArgs) -> str:
-    """Add a comment to a pull request.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        body: The comment body.
-    """
+async def gh_pr_comment(args: PrCommentArgs) -> str:
+    """Add a comment to a pull request."""
     repo = args.repo
     pr = args.pr
-    body = args.body
     validate_repo(repo)
-    return run_gh(["pr", "comment", str(int(pr)), "-R", repo, "--body", body])
+    resp = await gh_request("POST", f"repos/{repo}/issues/{pr}/comments", json={"body": args.body})
+    return json.dumps(resp.json())
 
 
 @_audit_log
-def gh_pr_merge(args: PrMergeArgs) -> str:
-    """Merge a pull request.
-
-    Args:
-        repo: Repository as ``owner/name``.
-        pr: Pull request number.
-        merge_method: ``squash``, ``merge``, or ``rebase``. Default is ``squash``.
-        delete_branch: Delete the local and remote branch after merge.
-    """
+async def gh_pr_merge(args: PrMergeArgs) -> str:
+    """Merge a pull request."""
     if not args.confirm:
         raise ValueError("Must set confirm=True")
     repo = args.repo
     pr = args.pr
-    merge_method = args.merge_method
-    delete_branch = args.delete_branch
     validate_repo(repo)
-    cmd_args = ["pr", "merge", str(int(pr)), "-R", repo, f"--{merge_method}"]
-    if delete_branch:
-        cmd_args += ["--delete-branch"]
-    return run_gh(cmd_args)
+
+    pr_resp = await gh_request("GET", f"repos/{repo}/pulls/{pr}")
+    head_ref = pr_resp.json().get("head", {}).get("ref")
+
+    resp = await gh_request(
+        "PUT", f"repos/{repo}/pulls/{pr}/merge", json={"merge_method": args.merge_method}
+    )
+    result = resp.json()
+
+    if args.delete_branch and head_ref:
+        try:
+            await gh_request("DELETE", f"repos/{repo}/git/refs/heads/{head_ref}")
+        except Exception as e:
+            # Merge already succeeded; surface the cleanup failure instead of hiding it.
+            result["branch_delete_error"] = str(e)
+
+    return json.dumps(result)
