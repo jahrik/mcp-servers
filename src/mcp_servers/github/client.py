@@ -72,6 +72,14 @@ async def gh_request(method: str, endpoint: str, **kwargs: Any) -> httpx.Respons
         endpoint = endpoint.lstrip("/")
         url = f"{base_url}/{endpoint}"
     else:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(endpoint)
+        if parsed.netloc != "api.github.com":
+            raise GhError(
+                f"Absolute URL host {parsed.netloc!r} is not allowed — "
+                "only api.github.com is permitted to prevent token exfiltration."
+            )
         url = endpoint
 
     # follow_redirects: several endpoints (e.g. job logs) 302 to blob storage — httpx
@@ -120,7 +128,10 @@ async def gh_request_paginated(
         page_params = None  # the `next` URL already carries the query string
         page = resp.json()
         if not isinstance(page, list):
-            return page
+            raise GhError(
+                f"gh_request_paginated: expected a list response from {url!r}, "
+                f"got {type(page).__name__}. Use gh_request for non-paginated endpoints."
+            )
         results.extend(page)
         url = resp.links.get("next", {}).get("url")
 

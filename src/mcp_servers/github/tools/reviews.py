@@ -49,7 +49,7 @@ async def gh_review_comments_list(args: ReviewCommentsListArgs) -> str:
 
     results = []
     for c in comments:
-        user = c.get("user", {})
+        user = c.get("user") or {}
         login = user.get("login", "")
         if bot_only:
             is_bot = user.get("type") == "Bot" or "copilot" in login.lower()

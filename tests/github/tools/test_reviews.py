@@ -158,3 +158,18 @@ async def test_gh_review_threads_get_bot_match(httpx_mock):
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, bot_only=True)
     )
     assert len(json.loads(res)["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_gh_review_comments_list_deleted_user(httpx_mock):
+    """user: null from a deleted GitHub account must not crash; author should be empty string."""
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/comments?per_page=100",
+        json=[{"id": 5, "body": "from deleted user", "user": None}],
+    )
+    res = await gh_review_comments_list(
+        ReviewCommentsListArgs(repo="octocat/repo", pr=1, bot_only=False)
+    )
+    data = [json.loads(line) for line in res.splitlines()]
+    assert data[0]["id"] == 5
+    assert data[0]["author"] == ""

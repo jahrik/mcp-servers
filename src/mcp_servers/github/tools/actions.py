@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mcp_servers.github.client import gh_request, validate_ref, validate_repo
+from mcp_servers.github.client import GhError, gh_request, validate_ref, validate_repo
 
 from ..models.schemas import RunArgs, RunListArgs
 
@@ -94,7 +94,9 @@ async def gh_run_failed_logs(args: RunArgs) -> str:
         try:
             log_resp = await gh_request("GET", f"repos/{repo}/actions/jobs/{job_id}/logs")
             logs.append(f"--- Job: {j.get('name')} ---\n{log_resp.text}")
-        except Exception:
+        except GhError as e:
+            if e.status_code != 404:
+                raise
             logs.append(f"--- Job: {j.get('name')} ---\n(Logs not available)")
 
     if not logs:
