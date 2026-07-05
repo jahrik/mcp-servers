@@ -393,27 +393,27 @@ if __name__ == "__main__":
 ## 7. Production Readiness Checklist
 
 ### Security
-* [ ] **Local Path Traversal Rules**: Verify that file imports respect the same workspace constraints as the rest of the ecosystem.
-* [ ] **Resource Limits**: Ensure `max_memory` limits are set by default to prevent query tasks from causing system Out-Of-Memory events.
-* [ ] **External Network Controls**: Verify `disable_external_access` blocks remote files if `MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS=true`.
+* [x] **Local Path Traversal Rules**: Verify that file imports respect the same workspace constraints as the rest of the ecosystem.
+* [x] **Resource Limits**: Ensure `max_memory` limits are set by default to prevent query tasks from causing system Out-Of-Memory events.
+* [x] **External Network Controls**: Verify `enable_external_access = false` blocks remote files if `MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS=true`.
 
 ### Code Quality & Stability
-* [ ] **Async Loop Safety**: Ensure no synchronous DuckDB calls run directly in the event loop thread; they must use `asyncio.to_thread`.
-* [ ] **Encoder Reliability**: Run query tests that select dates, times, decimals, and blobs to confirm `DuckDbJSONEncoder` serializes them without error.
-* [ ] **Session State & Caching**: Verify connection cache registry successfully retains `:memory:` states and loaded extensions across separate tool calls.
-* [ ] Run `ruff check .` and `ruff format .` to verify formatting.
-* [ ] Run `ty check` to ensure type checks pass.
+* [x] **Async Loop Safety**: Ensure no synchronous DuckDB calls run directly in the event loop thread; they must use `asyncio.to_thread`.
+* [x] **Encoder Reliability**: Run query tests that select dates, times, decimals, and blobs to confirm `DuckDbJSONEncoder` serializes them without error.
+* [x] **Session State & Caching**: Verify connection cache registry successfully retains `:memory:` states and loaded extensions across separate tool calls.
+* [x] Run `ruff check .` and `ruff format .` to verify formatting.
+* [x] Run `ty check` to ensure type checks pass.
 
 ### Test Strategy (`tests/duckdb/`)
-* [ ] `test_query_memory`: Run basic read queries against `:memory:`.
-* [ ] `test_query_write`: Run write queries (`CREATE TABLE`, `INSERT`) and verify changes persist across queries on the same connection/file.
-* [ ] `test_query_read_only`: Verify `read_only=True` prevents modifications to tables.
-* [ ] `test_list_tables`: Create multiple tables and verify `duckdb_list_tables` lists them correctly.
-* [ ] `test_describe`: Verify schema description works for both tables and direct file queries.
-* [ ] `test_truncation`: Verify queries returning large rows truncate gracefully at `max_rows` and attach the truncation warning.
-* [ ] `test_json_encoder`: Run queries returning dates/decimals and assert successful string outputs.
-* [ ] `test_connection_caching`: Assert that creating a table in `:memory:` in one tool call makes it queries-able in a subsequent tool call.
-* [ ] `test_close_database`: Verify closing a connection successfully releases files and removes them from the registry cache.
+* [x] `test_query_memory`: Run basic read queries against `:memory:`.
+* [x] `test_query_write`: Run write queries (`CREATE TABLE`, `INSERT`) and verify changes persist across queries on the same connection/file.
+* [x] `test_query_read_only`: Verify `read_only=True` prevents modifications to tables.
+* [x] `test_list_tables`: Create multiple tables and verify `duckdb_list_tables` lists them correctly.
+* [x] `test_describe`: Verify schema description works for both tables and direct file queries.
+* [x] `test_truncation`: Verify queries returning large rows truncate gracefully at `max_rows` and attach the truncation warning.
+* [x] `test_json_encoder`: Run queries returning dates/decimals and assert successful string outputs.
+* [x] `test_connection_caching`: Assert that creating a table in `:memory:` in one tool call makes it queries-able in a subsequent tool call.
+* [x] `test_close_database`: Verify closing a connection successfully releases files and removes them from the registry cache.
 
 ---
 
