@@ -68,7 +68,7 @@ def get_connection_and_lock(
             mem_limit = os.getenv("MCP_DUCKDB_MEMORY_LIMIT", "2GB")
             conn.execute(f"SET max_memory = '{mem_limit}'")
             if os.getenv("MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS", "false").lower() == "true":
-                conn.execute("SET disable_external_access = true")
+                conn.execute("SET enable_external_access = false")
 
             _connections[db_path] = conn
             _connection_locks[db_path] = threading.Lock()
@@ -83,7 +83,7 @@ def format_db_error(e: Exception) -> str:
 
     if "Table with name" in err_msg or "does not exist" in err_msg:
         suggestion = "The table or view does not exist. Use the duckdb_list_tables tool to view available tables."
-    elif "No files found matching" in err_msg or "cannot open file" in err_msg:
+    elif "No files found" in err_msg or "cannot open file" in err_msg:
         suggestion = "Verify that the file path is correct and that the file exists."
     elif "Parser Error" in err_msg or "syntax error" in err_msg.lower():
         suggestion = "Check SQL query syntax. Note that SQL string literals must use single quotes (e.g. 'value'), not double quotes."
@@ -132,11 +132,8 @@ def _execute_close(args: DuckDbCloseDatabaseArgs) -> str:
     with _registry_lock:
         if db_path in _connections:
             conn = _connections.pop(db_path)
-            lock = _connection_locks.pop(db_path, None)
-            if lock:
-                with lock:
-                    conn.close()
-            else:
+            lock = _connection_locks.pop(db_path)
+            with lock:
                 conn.close()
             closed_keys.append(db_path)
 

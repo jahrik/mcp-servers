@@ -54,8 +54,7 @@ class DuckDbDescribeArgs(BaseModel, frozen=True):
             or "\\" in v
             or any(v.endswith(ext) for ext in [".csv", ".tsv", ".json", ".jsonl", ".parquet"])
         ):
-            resolved = normalize_path(v)
-            return resolved if resolved is not None else v
+            return normalize_path(v) or v
         return v
 
     @field_validator("database")
