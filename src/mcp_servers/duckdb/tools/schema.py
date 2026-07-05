@@ -7,14 +7,22 @@ from ..models.schemas import DuckDbDescribeArgs, DuckDbListTablesArgs
 from .query import DuckDbJSONEncoder, format_db_error, get_connection_and_lock
 
 
+def quote_identifier(name: str) -> str:
+    """Quote table/view identifiers with double quotes, escaping internal double quotes."""
+    parts = name.split(".")
+    quoted_parts = [f'"{part.replace('"', '""')}"' for part in parts]
+    return ".".join(quoted_parts)
+
+
 def _execute_describe(args: DuckDbDescribeArgs) -> str:
     db_path = args.database or ":memory:"
     target = args.path
 
     if any(target.endswith(ext) for ext in [".csv", ".tsv", ".json", ".jsonl", ".parquet"]):
-        query = f"DESCRIBE SELECT * FROM '{target}' LIMIT 0"
+        escaped_path = target.replace("'", "''")
+        query = f"DESCRIBE SELECT * FROM '{escaped_path}' LIMIT 0"
     else:
-        query = f"DESCRIBE {target}"
+        query = f"DESCRIBE {quote_identifier(target)}"
 
     try:
         conn, lock = get_connection_and_lock(db_path, read_only=True)

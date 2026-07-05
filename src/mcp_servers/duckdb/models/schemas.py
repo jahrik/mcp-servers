@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def normalize_path(v: str | None) -> str | None:
-    if v is None:
-        return None
+    if v is None or v == ":memory:":
+        return v
     return os.path.abspath(os.path.expanduser(v))
 
 

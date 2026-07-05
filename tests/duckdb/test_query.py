@@ -267,21 +267,62 @@ async def test_cursor_description_none(mocker):
 
 
 @pytest.mark.asyncio
-async def test_access_mode_exception(mocker, tmp_path):
-    # Test get_connection_and_lock when connection access mode query raises Exception
-    # This will cover line 52-53 in query.py
-    from mcp_servers.duckdb.tools import query
+async def test_read_only_bypass_with_cached_rw_connection(tmp_path):
+    # Test that opening a persistent DB in RW mode, and then (without closing)
+    # attempting a write with read_only=True fails.
+    db_file = tmp_path / "ro_bypass.db"
 
-    db_file = str(tmp_path / "dummy_db")
-    mock_conn = mocker.MagicMock()
-    mock_conn.execute.side_effect = Exception("mock error")
+    # 1. Open and create table in read-write (read_only=False) mode
+    args1 = DuckDbQueryArgs(
+        database=str(db_file), query="CREATE TABLE test_bypass (x INT)", read_only=False
+    )
+    res1 = json.loads(await duckdb_query(args1))
+    assert "error" not in res1
 
-    query._connections[db_file] = mock_conn
+    # 2. Run query with read_only=True to insert a row.
+    # Since we cache by (db_path, read_only), the read-only request gets its own connection
+    # and should fail because write is not permitted on a read-only connection.
+    args2 = DuckDbQueryArgs(
+        database=str(db_file), query="INSERT INTO test_bypass VALUES (42)", read_only=True
+    )
+    res2 = json.loads(await duckdb_query(args2))
+    assert "error" in res2
+    assert "read-only" in res2["error"].lower()
 
-    # We call get_connection_and_lock. If it fails querying access_mode,
-    # it catches it and sets is_existing_readonly = True, then closes it.
-    conn, lock = query.get_connection_and_lock(db_file, read_only=False)
-    assert mock_conn.close.called
+    # Clean up
+    await duckdb_close_database(DuckDbCloseDatabaseArgs(database=str(db_file)))
 
-    # Clean registry
-    query._connections.clear()
+
+@pytest.mark.asyncio
+async def test_describe_identifier_quoting(tmp_path):
+    # Test that identifiers are correctly quoted in duckdb_describe
+    db_file = tmp_path / "quoting.db"
+
+    # Create schema and table to test dotted quoting
+    await duckdb_query(DuckDbQueryArgs(query="CREATE SCHEMA my_schema", database=str(db_file)))
+    await duckdb_query(
+        DuckDbQueryArgs(query="CREATE TABLE my_schema.test_table (x INT)", database=str(db_file))
+    )
+
+    # Create table with double quote in name to test quote escaping
+    await duckdb_query(
+        DuckDbQueryArgs(query='CREATE TABLE "my""table" (y INT)', database=str(db_file))
+    )
+
+    # Describe dotted identifier (should succeed as "my_schema"."test_table")
+    res1 = json.loads(
+        await duckdb_describe(
+            DuckDbDescribeArgs(path="my_schema.test_table", database=str(db_file))
+        )
+    )
+    assert "schema" in res1
+    assert res1["schema"][0]["column_name"] == "x"
+
+    # Describe identifier with double quotes (should succeed as "my""table")
+    res2 = json.loads(
+        await duckdb_describe(DuckDbDescribeArgs(path='my"table', database=str(db_file)))
+    )
+    assert "schema" in res2
+    assert res2["schema"][0]["column_name"] == "y"
+
+    await duckdb_close_database(DuckDbCloseDatabaseArgs(database=str(db_file)))

@@ -28,6 +28,7 @@ class DuckDbJSONEncoder(json.JSONEncoder):
 
 # Thread-safe global registries for connection sharing
 _connections: dict[str, duckdb.DuckDBPyConnection] = {}
+_connection_read_only: dict[str, bool] = {}
 _connection_locks: dict[str, threading.Lock] = {}
 _registry_lock = threading.Lock()
 
@@ -41,27 +42,13 @@ def get_connection_and_lock(
         read_only = False
 
     with _registry_lock:
-        need_open = True
         if db_path in _connections:
-            existing_conn = _connections[db_path]
-            try:
-                # Query access_mode to check compatibility
-                res_mode = existing_conn.execute("SELECT current_setting('access_mode')").fetchone()
-                mode = res_mode[0] if res_mode is not None else "read_only"
-                is_existing_readonly = mode == "read_only"
-            except Exception:
-                is_existing_readonly = True
+            existing_readonly = _connection_read_only.get(db_path, True)
+            if existing_readonly != read_only:
+                conn = _connections.pop(db_path)
+                conn.close()
 
-            # If we want read-write (read_only=False) but the cached connection is read-only,
-            # we close and reopen it in read-write mode.
-            if not read_only and is_existing_readonly:
-                existing_conn.close()
-                _connections.pop(db_path, None)
-                _connection_locks.pop(db_path, None)
-            else:
-                need_open = False
-
-        if need_open:
+        if db_path not in _connections:
             conn = duckdb.connect(database=db_path, read_only=read_only)
 
             # Apply initial configuration parameters
@@ -71,7 +58,9 @@ def get_connection_and_lock(
                 conn.execute("SET enable_external_access = false")
 
             _connections[db_path] = conn
-            _connection_locks[db_path] = threading.Lock()
+            _connection_read_only[db_path] = read_only
+            if db_path not in _connection_locks:
+                _connection_locks[db_path] = threading.Lock()
 
         return _connections[db_path], _connection_locks[db_path]
 
@@ -132,6 +121,7 @@ def _execute_close(args: DuckDbCloseDatabaseArgs) -> str:
     with _registry_lock:
         if db_path in _connections:
             conn = _connections.pop(db_path)
+            _connection_read_only.pop(db_path, None)
             lock = _connection_locks.pop(db_path)
             with lock:
                 conn.close()
