@@ -14,6 +14,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | ----------- | --------------- | --------------------------------------------------------------- |
 | `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
 | `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
+| `duckdb`    | `mcp-duckdb`    | DuckDB SQL operations (querying local CSV/JSON files, memory)   |
 
 ### `github`
 
@@ -27,6 +28,12 @@ A read-only local server: four tools (`ws_status`, `ws_repo`, `ws_branches`, `ws
 every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_ROOT` or a
 `root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
 mutates a working copy and needs no credentials.
+
+### `duckdb`
+
+A Python DuckDB server providing dynamic SQL execution, schema description, and table discovery. It enables connection caching across tool calls, thread safety per database path, and query limits to prevent context window overflow.
+
+[Read the detailed `duckdb` server documentation](docs/duckdb.md).
 
 ## Install
 
