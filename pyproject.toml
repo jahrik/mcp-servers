@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "jahrik", email = "jahrik@gmail.com" }]
 dependencies = [
+    "duckdb>=1.1.0",
     "httpx>=0.28.1",
     "jq>=1.11.0",
     "mcp>=1.2.0",
@@ -18,6 +19,7 @@ dependencies = [
 # as `type: stdio` MCP servers (command: mcp-github, etc.).
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"
+mcp-duckdb = "mcp_servers.duckdb.server:main"
 
 [dependency-groups]
 dev = [
