@@ -19,6 +19,8 @@ returns compact JSON.
   info and remotes.
 - `ws_branches` — stale-branch report across the workspace: upstreams gone,
   local-only branches, branches already merged into the default branch.
+- `ws_log` — recent commits across the workspace or one repo (`path`), local
+  branches only; `since` takes git approxidate ("3 days", "2026-07-01").
 
 ## Rules
 

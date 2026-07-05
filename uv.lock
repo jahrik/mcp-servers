@@ -349,7 +349,7 @@ wheels = [
 
 [[package]]
 name = "mcp-servers"
-version = "0.2.1.dev0+g9a5a58eba.d20260705"
+version = "0.2.1.dev2+g0df63af73.d20260705"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

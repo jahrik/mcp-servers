@@ -21,6 +21,7 @@ mcp = FastMCP("workspace")
 mcp.tool()(tools.ws_status)
 mcp.tool()(tools.ws_repo)
 mcp.tool()(tools.ws_branches)
+mcp.tool()(tools.ws_log)
 
 
 def main() -> None:

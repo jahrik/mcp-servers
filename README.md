@@ -23,7 +23,7 @@ An async Python GitHub server. Authenticates via a GitHub App using Installation
 
 ### `workspace`
 
-A read-only local server: three tools (`ws_status`, `ws_repo`, `ws_branches`) that survey
+A read-only local server: four tools (`ws_status`, `ws_repo`, `ws_branches`, `ws_log`) that survey
 every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_ROOT` or a
 `root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
 mutates a working copy and needs no credentials.
