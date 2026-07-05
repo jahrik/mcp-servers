@@ -10,15 +10,23 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 
 ## Servers
 
-| Server   | Script       | What it does                                              |
-| -------- | ------------ | --------------------------------------------------------- |
-| `github` | `mcp-github` | GitHub access (PRs, issues, files, code search, review threads) |
+| Server      | Script          | What it does                                                    |
+| ----------- | --------------- | --------------------------------------------------------------- |
+| `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
+| `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 
 ### `github`
 
 An async Python GitHub server. Authenticates via a GitHub App using Installation Access Tokens, providing clear audit attribution for AI agent actions.
 
 [Read the detailed `github` server documentation](docs/github.md).
+
+### `workspace`
+
+A read-only local server: three tools (`ws_status`, `ws_repo`, `ws_branches`) that survey
+every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_ROOT` or a
+`root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
+mutates a working copy and needs no credentials.
 
 ## Install
 
@@ -61,10 +69,10 @@ Pull those values from wherever you actually store the secret (password manager,
 rather than pasting the key inline — `add-json` just needs the final JSON.
 
 If you use the [`ansible-ai-agents`](https://github.com/jahrik/ansible-ai-agents) role, it
-currently registers `github` via its `ai_agents_mcp_servers` variable (`type: stdio`,
-`command: mcp-github`) but doesn't yet manage GitHub App credentials for you — that role still
-assumes the old `gh auth login` model. Automated credential wiring for it is planned, not shipped;
-until then, set the three env vars yourself as shown above.
+registers `github` via its `ai_agents_mcp_servers` variable and manages the App identity for
+you: set the three `ai_agents_mcp_github_app_*` vars and the role writes an env file (App and
+installation IDs plus the *path* to your PEM, mode 0600) and a wrapper script that exports the
+key at launch — no config file ever holds the key itself.
 
 ## Development
 
