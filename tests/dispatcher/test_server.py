@@ -383,3 +383,10 @@ def test_reap_children_drops_finished(
 
     jobs._reap_children()
     assert jobs._children == []  # finished child reaped
+
+
+@pytest.mark.parametrize("raw", ["not-an-int", "0", "-3"])
+def test_max_running_falls_back_to_default(raw: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A non-numeric or non-positive override is ignored in favour of the default.
+    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", raw)
+    assert jobs._max_running() == jobs._DEFAULT_MAX_RUNNING
