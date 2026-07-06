@@ -117,7 +117,8 @@ async def test_gh_run_failed_logs_non404_error_propagates(httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_gh_run_rerun(httpx_mock):
+async def test_gh_run_rerun(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     httpx_mock.add_response(
         method="POST",
         url="https://api.github.com/repos/octocat/repo/actions/runs/1/rerun",
@@ -128,7 +129,8 @@ async def test_gh_run_rerun(httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_gh_run_rerun_failed_only(httpx_mock):
+async def test_gh_run_rerun_failed_only(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     httpx_mock.add_response(
         method="POST",
         url="https://api.github.com/repos/octocat/repo/actions/runs/1/rerun-failed-jobs",
