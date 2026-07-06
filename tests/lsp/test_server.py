@@ -693,7 +693,6 @@ async def test_lsp_workspace_symbols_all_fail():
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_lsp_workspace_symbols_outer_exception():
     from unittest.mock import PropertyMock
 

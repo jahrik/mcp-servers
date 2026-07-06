@@ -405,7 +405,7 @@ class LSPClient:
                 await asyncio.sleep(60)
                 now = time.monotonic()
                 to_remove = []
-                for lang, session in self.sessions.items():
+                for lang, session in list(self.sessions.items()):
                     if now - session.last_used > self.idle_timeout_secs:
                         logger.info(f"Reaping idle LSP session for {lang}")
                         await session.stop()

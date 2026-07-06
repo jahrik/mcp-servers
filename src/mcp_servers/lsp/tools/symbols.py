@@ -44,11 +44,20 @@ async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
     try:
         params = {"query": query}
         results = []
-        for lang in list(utils.lsp_client.sessions.keys()):
+        languages = set(utils.lsp_client.sessions.keys()) | {
+            "python",
+            "go",
+            "rust",
+            "typescript",
+            "javascript",
+        }
+        for lang in languages:
             try:
                 response = await utils.lsp_client.send_request(lang, "workspace/symbol", params)
                 if response:
                     results.append({lang: response})
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 pass
 

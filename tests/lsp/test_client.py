@@ -553,25 +553,6 @@ def test_router_get_diagnostics(router):
 
 
 @pytest.mark.asyncio
-async def test_router_reap_loop(router):
-    import time
-
-    router.idle_timeout_secs = 0.01
-
-    mock_session = MagicMock()
-    mock_session.last_used = time.monotonic() - 1.0
-    mock_session.stop = AsyncMock()
-    router.sessions["python"] = mock_session
-
-    await router.start()
-    await asyncio.sleep(0.05)  # Let reap loop run
-
-    # wait, the reap loop sleeps for 60 seconds!
-    # I should patch asyncio.sleep to not wait, or mock it.
-    pass
-
-
-@pytest.mark.asyncio
 async def test_router_reap_loop_fast():
     import time
 
