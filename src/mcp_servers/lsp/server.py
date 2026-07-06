@@ -43,6 +43,9 @@ mcp.tool()(tools.lsp_type_definition)
 mcp.tool()(tools.lsp_implementation)
 mcp.tool()(tools.lsp_document_highlight)
 mcp.tool()(tools.lsp_call_hierarchy)
+mcp.tool()(tools.lsp_rename)
+mcp.tool()(tools.lsp_code_actions)
+mcp.tool()(tools.lsp_execute_code_action)
 
 
 def main() -> None:

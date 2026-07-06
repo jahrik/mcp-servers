@@ -30,6 +30,8 @@ class LSPSession:
         self._read_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._document_versions: dict[str, int] = {}
+        self._document_texts: dict[str, str] = {}
+        self._sync_kind: int = 1  # 1 = Full, 2 = Incremental
         self._diagnostics: dict[str, list[Any]] = {}
         self.last_used = time.monotonic()
 
@@ -87,6 +89,7 @@ class LSPSession:
         self._process = None
         self._pending_requests.clear()
         self._document_versions.clear()
+        self._document_texts.clear()
         self._diagnostics.clear()
         logger.info("Stopped LSP process.")
 
@@ -289,6 +292,15 @@ class LSPSession:
         }
 
         result = await self.send_request("initialize", params, timeout=15.0)
+
+        # Parse sync kind
+        if result and "capabilities" in result:
+            sync = result["capabilities"].get("textDocumentSync")
+            if isinstance(sync, dict):
+                self._sync_kind = sync.get("change", 1)
+            elif isinstance(sync, int):
+                self._sync_kind = sync
+
         await self.send_notification("initialized", {})
         return result
 
@@ -297,6 +309,7 @@ class LSPSession:
         self.update_activity()
         if uri not in self._document_versions:
             self._document_versions[uri] = 1
+            self._document_texts[uri] = text
             await self.send_notification(
                 "textDocument/didOpen",
                 {
@@ -309,12 +322,50 @@ class LSPSession:
                 },
             )
         else:
+            old_text = self._document_texts.get(uri, "")
+            if old_text == text:
+                return
+
             self._document_versions[uri] += 1
+            self._document_texts[uri] = text
+
+            content_changes = []
+            if self._sync_kind == 2:
+                import difflib
+
+                old_lines = old_text.splitlines(keepends=True)
+                new_lines = text.splitlines(keepends=True)
+                sm = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+                for tag, i1, i2, j1, j2 in sm.get_opcodes():
+                    if tag == "equal":
+                        continue
+
+                    start_pos = {"line": i1, "character": 0}
+                    if i2 < len(old_lines):
+                        end_pos = {"line": i2, "character": 0}
+                    else:
+                        if old_lines:
+                            end_pos = {"line": i2 - 1, "character": len(old_lines[-1])}
+                        else:
+                            end_pos = {"line": 0, "character": 0}
+
+                    content_changes.append(
+                        {
+                            "range": {"start": start_pos, "end": end_pos},
+                            "text": "".join(new_lines[j1:j2]),
+                        }
+                    )
+                # Reverse to avoid line number shifting during sequential application
+                content_changes.reverse()
+            else:
+                content_changes = [{"text": text}]
+
             await self.send_notification(
                 "textDocument/didChange",
                 {
                     "textDocument": {"uri": uri, "version": self._document_versions[uri]},
-                    "contentChanges": [{"text": text}],
+                    "contentChanges": content_changes,
                 },
             )
 
@@ -341,11 +392,14 @@ class LSPClient:
         }
         self.idle_timeout_secs = 600.0  # 10 minutes
         self._reap_task: asyncio.Task[None] | None = None
+        self._watch_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Start the reaping task."""
+        """Start the reaping task and watcher task."""
         if not self._reap_task:
             self._reap_task = asyncio.create_task(self._reap_loop())
+        if not self._watch_task:
+            self._watch_task = asyncio.create_task(self._watch_loop())
 
     async def stop(self) -> None:
         """Stop all sessions and the reap task."""
@@ -356,6 +410,11 @@ class LSPClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._reap_task
             self._reap_task = None
+        if self._watch_task:
+            self._watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watch_task
+            self._watch_task = None
 
         for session in list(self.sessions.values()):
             await session.stop()
@@ -412,6 +471,64 @@ class LSPClient:
                         to_remove.append(lang)
                 for lang in to_remove:
                     del self.sessions[lang]
+        except asyncio.CancelledError:
+            pass
+
+    async def _watch_loop(self) -> None:
+        """Background task to poll for workspace file changes and send didChangeWatchedFiles."""
+        import os
+        from pathlib import Path
+        from urllib.parse import unquote
+
+        if not self.root_uri.startswith("file://"):
+            return
+
+        root_path = Path(unquote(self.root_uri[7:]))
+        if not root_path.exists():
+            return
+
+        extensions = {".py", ".go", ".rs", ".ts", ".tsx", ".js", ".jsx"}
+        last_mtimes: dict[str, float] = {}
+
+        try:
+            while True:
+                await asyncio.sleep(5)
+                if not self.sessions:
+                    continue
+
+                changes = []
+                for root, _, files in os.walk(root_path):
+                    if (
+                        ".git" in root
+                        or "__pycache__" in root
+                        or "node_modules" in root
+                        or ".venv" in root
+                    ):
+                        continue
+
+                    for f in files:
+                        if any(f.endswith(ext) for ext in extensions):
+                            path = Path(root) / f
+                            try:
+                                mtime = path.stat().st_mtime
+                                uri = path.as_uri()
+                                old_mtime = last_mtimes.get(uri)
+                                if old_mtime is None:
+                                    last_mtimes[uri] = mtime
+                                elif mtime > old_mtime:
+                                    last_mtimes[uri] = mtime
+                                    changes.append({"uri": uri, "type": 2})  # 2 = Changed
+                            except Exception:
+                                pass
+
+                if changes:
+                    for lang, session in list(self.sessions.items()):
+                        try:
+                            await session.send_notification(
+                                "workspace/didChangeWatchedFiles", {"changes": changes}
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send didChangeWatchedFiles to {lang}: {e}")
         except asyncio.CancelledError:
             pass
 

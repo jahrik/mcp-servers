@@ -591,3 +591,104 @@ async def test_router_stop_with_sessions():
     router.sessions["python"] = mock_session
     await router.stop()
     mock_session.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_watch_loop():
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("os.walk") as mock_walk,
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        mock_sleep.side_effect = [None, None, asyncio.CancelledError()]
+
+        # mock os.walk to return a file
+        mock_walk.return_value = [("/workspace", [], ["file.py", "ignored.txt", ".git/config"])]
+
+        # mock stat to return an mtime that changes
+        mock_stat_1 = MagicMock(st_mtime=1.0)
+        mock_stat_2 = MagicMock(st_mtime=2.0)
+        # 1 call on first sleep, 1 call on second sleep
+        mock_stat.side_effect = [mock_stat_1, mock_stat_2, Exception("stop")]
+
+        router = LSPClient(root_uri="file:///workspace")
+        mock_session = AsyncMock()
+        router.sessions["python"] = mock_session
+
+        await router._watch_loop()
+
+        # Should have sent didChangeWatchedFiles
+        mock_session.send_notification.assert_called_with(
+            "workspace/didChangeWatchedFiles",
+            {"changes": [{"uri": "file:///workspace/file.py", "type": 2}]},
+        )
+
+
+@pytest.mark.asyncio
+async def test_session_incremental_sync():
+    session = LSPSession(["dummy"])
+    session._sync_kind = 2
+    session.send_notification = AsyncMock()
+
+    # initial sync
+    await session.sync_file("file:///test.py", "python", "a\nb\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didOpen",
+        {
+            "textDocument": {
+                "uri": "file:///test.py",
+                "languageId": "python",
+                "version": 1,
+                "text": "a\nb\n",
+            }
+        },
+    )
+
+    # second sync with change
+    await session.sync_file("file:///test.py", "python", "a\nc\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didChange",
+        {
+            "textDocument": {"uri": "file:///test.py", "version": 2},
+            "contentChanges": [
+                {
+                    "range": {
+                        "start": {"line": 1, "character": 0},
+                        "end": {"line": 1, "character": 2},
+                    },
+                    "text": "c\n",
+                }
+            ],
+        },
+    )
+
+    # fallback sync
+    session._sync_kind = 1
+    await session.sync_file("file:///test.py", "python", "a\nd\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didChange",
+        {
+            "textDocument": {"uri": "file:///test.py", "version": 3},
+            "contentChanges": [{"text": "a\nd\n"}],
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_initialize_sync_kind():
+    session = LSPSession(["dummy"])
+    session.send_request = AsyncMock(
+        return_value={"capabilities": {"textDocumentSync": {"change": 2}}}
+    )
+    session.send_notification = AsyncMock()
+
+    await session.initialize("file:///test")
+    assert session._sync_kind == 2
+
+    session.send_request = AsyncMock(return_value={"capabilities": {"textDocumentSync": 1}})
+    await session.initialize("file:///test")
+    assert session._sync_kind == 1

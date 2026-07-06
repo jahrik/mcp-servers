@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .diagnostics import lsp_diagnostics
-from .navigation import (
+from mcp_servers.lsp.tools.mutations import lsp_code_actions, lsp_execute_code_action, lsp_rename
+from mcp_servers.lsp.tools.navigation import (
     lsp_call_hierarchy,
     lsp_definition,
     lsp_hover,
@@ -9,21 +9,26 @@ from .navigation import (
     lsp_references,
     lsp_type_definition,
 )
-from .symbols import (
+from mcp_servers.lsp.tools.symbols import (
     lsp_document_highlight,
     lsp_document_symbols,
     lsp_workspace_symbols,
 )
 
+from .diagnostics import lsp_diagnostics
+
 __all__ = [
-    "lsp_call_hierarchy",
-    "lsp_definition",
-    "lsp_diagnostics",
-    "lsp_document_highlight",
-    "lsp_document_symbols",
     "lsp_hover",
+    "lsp_definition",
+    "lsp_type_definition",
     "lsp_implementation",
     "lsp_references",
-    "lsp_type_definition",
+    "lsp_document_highlight",
+    "lsp_call_hierarchy",
+    "lsp_document_symbols",
     "lsp_workspace_symbols",
+    "lsp_diagnostics",
+    "lsp_rename",
+    "lsp_code_actions",
+    "lsp_execute_code_action",
 ]

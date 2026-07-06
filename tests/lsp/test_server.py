@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
+from mcp_servers.lsp import utils
 from mcp_servers.lsp.server import main, server_lifespan
 from mcp_servers.lsp.tools import (
     lsp_call_hierarchy,
@@ -15,6 +16,13 @@ from mcp_servers.lsp.tools import (
     lsp_type_definition,
     lsp_workspace_symbols,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_mtimes():
+
+    utils._file_mtimes.clear()
+    return
 
 
 @pytest.fixture(autouse=True)

@@ -10,7 +10,7 @@ if WORKSPACE_ROOT.startswith("~"):  # pragma: no cover
     WORKSPACE_ROOT = str(Path(WORKSPACE_ROOT).expanduser())
 
 # Create a global client instance
-lsp_client = LSPClient()
+lsp_client = LSPClient(root_uri=Path(WORKSPACE_ROOT).resolve().as_uri())
 
 
 def _prepare_file(filepath: str) -> Path | str:
@@ -27,6 +27,9 @@ def _prepare_file(filepath: str) -> Path | str:
     return filepath_obj
 
 
+_file_mtimes: dict[str, float] = {}
+
+
 async def _sync_file_with_lsp(filepath_obj: Path) -> tuple[str, str]:
     """Sync file to LSP and return URI and language ID."""
     uri = filepath_obj.as_uri()
@@ -41,9 +44,15 @@ async def _sync_file_with_lsp(filepath_obj: Path) -> tuple[str, str]:
     elif filepath.endswith((".js", ".jsx")):
         language_id = "javascript"
 
-    with open(filepath_obj, encoding="utf-8") as f:
-        content = f.read()
-    await lsp_client.sync_file(uri, language_id, content)
+    try:
+        mtime = filepath_obj.stat().st_mtime
+    except FileNotFoundError:
+        mtime = 0.0
+    if uri not in _file_mtimes or _file_mtimes[uri] != mtime:
+        with open(filepath_obj, encoding="utf-8") as f:
+            content = f.read()
+        await lsp_client.sync_file(uri, language_id, content)
+        _file_mtimes[uri] = mtime
     return uri, language_id
 
 
