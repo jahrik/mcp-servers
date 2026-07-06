@@ -29,6 +29,7 @@ class LSPClient:
         self._read_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._document_versions: dict[str, int] = {}
+        self._diagnostics: dict[str, list[Any]] = {}
 
     async def start(self) -> None:
         """Start the LSP subprocess."""
@@ -80,6 +81,7 @@ class LSPClient:
         self._process = None
         self._pending_requests.clear()
         self._document_versions.clear()
+        self._diagnostics.clear()
         logger.info("Stopped LSP process.")
 
     async def _read_loop(self) -> None:
@@ -170,6 +172,13 @@ class LSPClient:
             method = payload["method"]
             req_id = payload.get("id")
             logger.debug(f"Received LSP server method: {method}")
+
+            if method == "textDocument/publishDiagnostics":
+                params = payload.get("params", {})
+                uri = params.get("uri")
+                if uri:
+                    self._diagnostics[uri] = params.get("diagnostics", [])
+                return
 
             if req_id is not None:
                 # We don't implement client-side methods yet, but we MUST reply
@@ -294,3 +303,7 @@ class LSPClient:
                     "contentChanges": [{"text": text}],
                 },
             )
+
+    def get_diagnostics(self, uri: str) -> list[Any] | None:
+        """Return the most recently received diagnostics for a URI, or None if not yet received."""
+        return self._diagnostics.get(uri)

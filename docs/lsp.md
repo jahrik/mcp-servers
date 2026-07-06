@@ -7,9 +7,33 @@ The `lsp` server proxies requests to an underlying Language Server Protocol (LSP
 - `lsp_hover`
   - **Description**: Returns the type signature and docstring for the symbol at the requested file position.
   - **Inputs**:
-    - `filepath` (string): Absolute path to the file. Must reside within the `MCP_LSP_ROOT`.
+    - `filepath` (string): Absolute or workspace-relative path to the file. Must reside within the `MCP_LSP_ROOT`.
     - `line` (integer): 1-indexed line number.
     - `char` (integer): 0-indexed character position.
+- `lsp_definition`
+  - **Description**: Returns the file, line number, and character where the symbol at the requested position is defined (formatted as `path:line:char`).
+  - **Inputs**:
+    - `filepath` (string): Absolute or workspace-relative path to the file.
+    - `line` (integer): 1-indexed line number.
+    - `char` (integer): 0-indexed character position.
+- `lsp_references`
+  - **Description**: Returns a list of all locations in the codebase that reference the symbol at the requested position (each formatted as `path:line:char`).
+  - **Inputs**:
+    - `filepath` (string): Absolute or workspace-relative path to the file.
+    - `line` (integer): 1-indexed line number.
+    - `char` (integer): 0-indexed character position.
+- `lsp_document_symbols`
+  - **Description**: Returns a structured list of all symbols (classes, functions, methods, etc.) defined in the given file.
+  - **Inputs**:
+    - `filepath` (string): Absolute or workspace-relative path to the file.
+- `lsp_workspace_symbols`
+  - **Description**: Searches the entire workspace for symbols matching the given query string.
+  - **Inputs**:
+    - `query` (string): The search query.
+- `lsp_diagnostics`
+  - **Description**: Returns any syntax errors, type-checking errors, or warnings for the given file.
+  - **Inputs**:
+    - `filepath` (string): Absolute or workspace-relative path to the file.
 
 ## Configuration
 
