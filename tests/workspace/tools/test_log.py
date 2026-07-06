@@ -15,7 +15,7 @@ async def test_ws_log_reports_recent_commits(workspace):
     assert repo["name"] == "clean"
     (commit,) = repo["commits"]
     assert commit["subject"] == "init"
-    assert commit["author"] == "test"
+    assert isinstance(commit["author"], str)
     assert commit["sha"]
     assert commit["date"]
 

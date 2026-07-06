@@ -61,12 +61,12 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     elif filepath.endswith(".rs"):
         language_id = "rust"
 
-    await lsp_client.open_file(uri, language_id, content)
-
-    # Send hover request (LSP uses 0-indexed lines)
-    params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-
     try:
+        await lsp_client.open_file(uri, language_id, content)
+
+        # Send hover request (LSP uses 0-indexed lines)
+        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+
         response = await lsp_client.send_request("textDocument/hover", params)
         if not response:
             return "No hover information found at this position."
@@ -89,5 +89,5 @@ def main() -> None:
     mcp.run()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
