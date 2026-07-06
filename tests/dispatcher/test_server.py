@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,10 +11,10 @@ from mcp_servers.dispatcher import server
 
 
 @pytest.fixture
-def mock_db(tmp_path: Path) -> Generator[Path, None, None]:
+def mock_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     db_path = tmp_path / "test_dispatcher.db"
-    with patch("mcp_servers.dispatcher.server.DB_PATH", db_path):
-        yield db_path
+    monkeypatch.setenv("MCP_DISPATCHER_DB_PATH", str(db_path))
+    return db_path
 
 
 @pytest.fixture
@@ -22,7 +23,11 @@ def mock_subprocess() -> Generator[MagicMock, None, None]:
         yield mock_popen
 
 
-def test_submit_job(mock_db: Path, mock_subprocess: MagicMock) -> None:
+def test_submit_job(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+
     # Test submission
     job_id = server.submit_job("test_worker", '{"foo": "bar"}')
 
@@ -31,9 +36,13 @@ def test_submit_job(mock_db: Path, mock_subprocess: MagicMock) -> None:
     args, kwargs = mock_subprocess.call_args
     assert args[0] == ["agy", '--print={"foo": "bar"}']
     assert kwargs.get("start_new_session") is True
+    assert kwargs.get("stdout") == subprocess.DEVNULL
+    assert kwargs.get("stderr") == subprocess.DEVNULL
+
     assert "env" in kwargs
     assert kwargs["env"]["AGY_JOB_ID"] == job_id
     assert kwargs["env"]["AGY_WORKER_TYPE"] == "test_worker"
+    assert kwargs["env"]["MCP_DISPATCHER_DB_PATH"] == str(mock_db)
 
     # Assert DB state
     with sqlite3.connect(mock_db) as conn:
@@ -47,7 +56,10 @@ def test_submit_job(mock_db: Path, mock_subprocess: MagicMock) -> None:
     assert row["payload"] == '{"foo": "bar"}'
 
 
-def test_get_job_status(mock_db: Path, mock_subprocess: MagicMock) -> None:
+def test_get_job_status(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     job_id = server.submit_job("test_worker", '{"foo": "bar"}')
 
     status_str = server.get_job_status(job_id)
@@ -75,3 +87,33 @@ def test_server_main(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server.mcp, "run", mock_run)
     server.main()
     assert called
+
+
+def test_submit_job_spawn_not_allowed(mock_db: Path) -> None:
+    with pytest.raises(RuntimeError, match="Spawning is not allowed"):
+        server.submit_job("test_worker", '{"foo": "bar"}')
+
+
+def test_submit_job_invalid_json(mock_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    with pytest.raises(ValueError, match="Payload must be valid JSON"):
+        server.submit_job("test_worker", "invalid json")
+
+
+def test_submit_job_subprocess_exception(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    mock_subprocess.side_effect = Exception("Popen failed")
+
+    with pytest.raises(Exception, match="Popen failed"):
+        server.submit_job("test_worker", '{"foo": "bar"}')
+
+    # Assert DB state is updated to Failed
+    with sqlite3.connect(mock_db) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute("SELECT * FROM jobs")
+        row = cursor.fetchone()
+
+    assert row is not None
+    assert row["status"] == "Failed"

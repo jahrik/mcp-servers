@@ -16,12 +16,16 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("dispatcher")
 
-DB_PATH = Path("~/.config/agents/dispatcher.db").expanduser()
+
+def get_db_path() -> Path:
+    path_str = os.environ.get("MCP_DISPATCHER_DB_PATH", "~/.config/agents/dispatcher.db")
+    return Path(path_str).expanduser()
 
 
 def _init_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
@@ -46,10 +50,19 @@ def submit_job(worker_type: str, payload: str) -> str:
     Returns:
         The newly generated job ID.
     """
+    if os.environ.get("MCP_DISPATCHER_ALLOW_SPAWN") != "true":
+        raise RuntimeError("Spawning is not allowed")
+
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError as e:
+        raise ValueError("Payload must be valid JSON") from e
+
     _init_db()
     job_id = str(uuid.uuid4())
+    db_path = get_db_path()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(db_path) as conn:
         conn.execute(
             "INSERT INTO jobs (id, status, worker_type, payload) VALUES (?, ?, ?, ?)",
             (job_id, "Running", worker_type, payload),
@@ -59,13 +72,25 @@ def submit_job(worker_type: str, payload: str) -> str:
     env = os.environ.copy()
     env["AGY_JOB_ID"] = job_id
     env["AGY_WORKER_TYPE"] = worker_type
+    env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
 
     # Asynchronously spawn the worker
-    subprocess.Popen(
-        ["agy", f"--print={payload}"],
-        start_new_session=True,
-        env=env,
-    )
+    try:
+        subprocess.Popen(
+            ["agy", f"--print={payload}"],
+            start_new_session=True,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "UPDATE jobs SET status = ? WHERE id = ?",
+                ("Failed", job_id),
+            )
+            conn.commit()
+        raise
 
     return job_id
 
@@ -81,7 +106,8 @@ def get_job_status(job_id: str) -> str:
         JSON string representation of the job row.
     """
     _init_db()
-    with sqlite3.connect(DB_PATH) as conn:
+    db_path = get_db_path()
+    with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = cursor.fetchone()
