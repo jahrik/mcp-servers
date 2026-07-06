@@ -89,12 +89,17 @@ def submit_job(args: SubmitJobArgs) -> str:
     env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
     prompt = "You are a background worker. Read your AGY_WORKER_TYPE and AGY_JOB_ID from your environment variables. Fetch your job payload using the get_job_status tool for that job_id and execute the task. When finished, you must update the job status in the dispatcher DB."
 
-    # Asynchronously spawn the worker
+    # Asynchronously spawn the worker.
+    # stdin MUST be detached: without it the child inherits this MCP server's
+    # stdin — the live stdio JSON-RPC pipe — which never sends EOF, so
+    # `agy --print` blocks reading it and hangs forever (job stuck Running,
+    # empty log). DEVNULL gives it an immediate EOF so it runs non-interactively.
     try:
         subprocess.Popen(
             ["agy", f"--print={prompt}"],
             start_new_session=True,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

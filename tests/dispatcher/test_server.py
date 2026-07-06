@@ -47,6 +47,9 @@ def test_submit_job(
     assert "Read your AGY_WORKER_TYPE and AGY_JOB_ID" in args[0][1]
     assert "get_job_status tool" in args[0][1]
     assert kwargs.get("start_new_session") is True
+    # stdin must be detached (DEVNULL): inheriting the server's stdio JSON-RPC
+    # pipe makes `agy --print` block on a never-EOF stdin and hang forever.
+    assert kwargs.get("stdin") == subprocess.DEVNULL
     assert kwargs.get("stdout") == subprocess.DEVNULL
     assert kwargs.get("stderr") == subprocess.DEVNULL
 
