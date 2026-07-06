@@ -351,6 +351,7 @@ async def test_lsp_diagnostics_empty():
 async def test_lsp_workspace_symbols_success():
     ctx = MagicMock()
     with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock()}
         mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
 
         res = await lsp_workspace_symbols("foo", ctx)
@@ -417,6 +418,7 @@ async def test_lsp_tools_cancelled(tool_func, args):
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
+        mock_client.sessions = {"python": MagicMock()}
         mock_client.sync_file = AsyncMock(side_effect=asyncio.CancelledError())
         mock_client.send_request = AsyncMock(side_effect=asyncio.CancelledError())
         with pytest.raises(asyncio.CancelledError):
@@ -431,7 +433,6 @@ async def test_lsp_tools_cancelled(tool_func, args):
         (lsp_references, ("/path/to/file.py", 1, 0)),
         (lsp_document_symbols, ("/path/to/file.py",)),
         (lsp_diagnostics, ("/path/to/file.py",)),
-        (lsp_workspace_symbols, ("query",)),
         (lsp_type_definition, ("/path/to/file.py", 1, 0)),
         (lsp_implementation, ("/path/to/file.py", 1, 0)),
         (lsp_document_highlight, ("/path/to/file.py", 1, 0)),
@@ -445,6 +446,7 @@ async def test_lsp_tools_exception(tool_func, args):
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
+        mock_client.sessions = {"python": MagicMock()}
         mock_client.sync_file = AsyncMock(side_effect=Exception("mock error"))
         mock_client.send_request = AsyncMock(side_effect=Exception("mock error"))
         res = await tool_func(*args, ctx)
@@ -676,3 +678,44 @@ async def test_lsp_call_hierarchy_invalid_line_char():
     with patch("pathlib.Path.exists", return_value=True):
         res = await lsp_call_hierarchy("/path/to/file.py", 0, 0, "incoming", ctx)
         assert "line must be >= 1" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_all_fail():
+    from mcp_servers.lsp.server import lsp_workspace_symbols
+
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock(), "go": MagicMock()}
+        mock_client.send_request = AsyncMock(side_effect=Exception("mock err"))
+
+        res = await lsp_workspace_symbols("query", ctx)
+        assert "No workspace symbols found" in res
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_outer_exception():
+    from unittest.mock import PropertyMock
+
+    from mcp_servers.lsp.server import lsp_workspace_symbols
+
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+        type(mock_client).sessions = PropertyMock(side_effect=Exception("mock err"))
+        res = await lsp_workspace_symbols("query", ctx)
+        assert "Error querying LSP" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_outer_cancelled():
+    import asyncio
+    from unittest.mock import PropertyMock
+
+    from mcp_servers.lsp.server import lsp_workspace_symbols
+
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+        type(mock_client).sessions = PropertyMock(side_effect=asyncio.CancelledError())
+        with pytest.raises(asyncio.CancelledError):
+            await lsp_workspace_symbols("query", ctx)

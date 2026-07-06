@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ class LSPError(Exception):
         super().__init__(f"LSP Error {code}: {message}")
 
 
-class LSPClient:
+class LSPSession:
     """A client for managing the lifecycle and JSON-RPC transport to a language server subprocess."""
 
     def __init__(self, command: list[str]) -> None:
@@ -30,6 +31,10 @@ class LSPClient:
         self._stderr_task: asyncio.Task[None] | None = None
         self._document_versions: dict[str, int] = {}
         self._diagnostics: dict[str, list[Any]] = {}
+        self.last_used = time.monotonic()
+
+    def update_activity(self):
+        self.last_used = time.monotonic()
 
     async def start(self) -> None:
         """Start the LSP subprocess."""
@@ -47,6 +52,7 @@ class LSPClient:
         # Start background tasks for reading stdout and stderr
         self._read_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._stderr_loop())
+        self.update_activity()
 
     async def stop(self) -> None:
         """Stop the LSP subprocess."""
@@ -144,12 +150,13 @@ class LSPClient:
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                logger.warning(f"LSP STDERR: {line.decode('utf-8').strip()}")
+                logger.info(f"LSP STDERR: {line.decode('utf-8').strip()}")
         except asyncio.CancelledError:
             pass
 
     def _handle_payload(self, payload: dict[str, Any]) -> None:
         """Handle an incoming JSON-RPC payload."""
+        self.update_activity()
         if "id" in payload and ("result" in payload or "error" in payload):
             # It's a response
             req_id = payload["id"]
@@ -213,6 +220,7 @@ class LSPClient:
         self, method: str, params: Any = None, timeout: float | None = 10.0
     ) -> Any:
         """Send a JSON-RPC request and wait for the response."""
+        self.update_activity()
         self._request_id += 1
         req_id = self._request_id
 
@@ -238,6 +246,7 @@ class LSPClient:
 
     async def send_notification(self, method: str, params: Any = None) -> None:
         """Send a JSON-RPC notification (no response expected)."""
+        self.update_activity()
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -285,6 +294,7 @@ class LSPClient:
 
     async def sync_file(self, uri: str, language_id: str, text: str) -> None:
         """Synchronize the file content with the language server via didOpen/didChange."""
+        self.update_activity()
         if uri not in self._document_versions:
             self._document_versions[uri] = 1
             await self.send_notification(
@@ -311,3 +321,129 @@ class LSPClient:
     def get_diagnostics(self, uri: str) -> list[Any] | None:
         """Return the most recently received diagnostics for a URI, or None if not yet received."""
         return self._diagnostics.get(uri)
+
+    def is_alive(self) -> bool:
+        return self._process is not None and self._process.returncode is None
+
+
+class LSPClient:
+    """A routing client that manages multiple LSPSessions based on language."""
+
+    def __init__(self, root_uri: str = "") -> None:
+        self.root_uri = root_uri
+        self.sessions: dict[str, LSPSession] = {}
+        self.language_commands = {
+            "python": ["pyright-langserver", "--stdio"],
+            "go": ["gopls"],
+            "rust": ["rust-analyzer"],
+            "typescript": ["typescript-language-server", "--stdio"],
+            "javascript": ["typescript-language-server", "--stdio"],
+        }
+        self.idle_timeout_secs = 600.0  # 10 minutes
+        self._reap_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """Start the reaping task."""
+        if not self._reap_task:
+            self._reap_task = asyncio.create_task(self._reap_loop())
+
+    async def stop(self) -> None:
+        """Stop all sessions and the reap task."""
+        import contextlib
+
+        if self._reap_task:
+            self._reap_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reap_task
+            self._reap_task = None
+
+        for session in list(self.sessions.values()):
+            await session.stop()
+        self.sessions.clear()
+
+    async def initialize(self, root_uri: str) -> Any:
+        """Store the root URI to initialize spawned sessions."""
+        self.root_uri = root_uri
+        return {"capabilities": {}}
+
+    async def _get_or_create_session(self, language_id: str) -> LSPSession:
+        if language_id in self.sessions:
+            session = self.sessions[language_id]
+            if session.is_alive():
+                return session
+            # If it crashed, remove it and we will recreate
+            logger.warning(f"LSP session for {language_id} crashed. Restarting...")
+            await session.stop()
+            del self.sessions[language_id]
+
+        if language_id not in self.language_commands:
+            raise ValueError(f"Unsupported language: {language_id}")
+
+        cmd = self.language_commands[language_id]
+        import os
+        import shlex
+
+        if language_id == "python":
+            cmd = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
+
+        session = LSPSession(cmd)
+        await session.start()
+        if self.root_uri:
+            try:
+                await session.initialize(self.root_uri)
+            except Exception as e:
+                logger.error(f"Failed to initialize LSP for {language_id}: {e}")
+                await session.stop()
+                raise
+
+        self.sessions[language_id] = session
+        return session
+
+    async def _reap_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(60)
+                now = time.monotonic()
+                to_remove = []
+                for lang, session in self.sessions.items():
+                    if now - session.last_used > self.idle_timeout_secs:
+                        logger.info(f"Reaping idle LSP session for {lang}")
+                        await session.stop()
+                        to_remove.append(lang)
+                for lang in to_remove:
+                    del self.sessions[lang]
+        except asyncio.CancelledError:
+            pass
+
+    async def sync_file(self, uri: str, language_id: str, text: str) -> None:
+        """Synchronize file with the correct language server, with retry logic."""
+        session = await self._get_or_create_session(language_id)
+        try:
+            await session.sync_file(uri, language_id, text)
+        except RuntimeError:
+            # Maybe broken pipe, retry once
+            session = await self._get_or_create_session(language_id)
+            await session.sync_file(uri, language_id, text)
+
+    async def send_request(
+        self, language_id: str, method: str, params: Any = None, timeout: float | None = 10.0
+    ) -> Any:
+        session = await self._get_or_create_session(language_id)
+        try:
+            return await session.send_request(method, params, timeout)
+        except RuntimeError:
+            session = await self._get_or_create_session(language_id)
+            return await session.send_request(method, params, timeout)
+
+    async def send_notification(self, language_id: str, method: str, params: Any = None) -> None:
+        session = await self._get_or_create_session(language_id)
+        try:
+            await session.send_notification(method, params)
+        except RuntimeError:
+            session = await self._get_or_create_session(language_id)
+            await session.send_notification(method, params)
+
+    def get_diagnostics(self, uri: str, language_id: str) -> list[Any] | None:
+        if language_id in self.sessions:
+            return self.sessions[language_id].get_diagnostics(uri)
+        return None

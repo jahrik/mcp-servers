@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shlex
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,20 +16,18 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from mcp_servers.lsp.client import LSPClient
 
-# Use pyright by default, allow override via env
-LSP_COMMAND = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
 WORKSPACE_ROOT = os.environ.get("MCP_LSP_ROOT", os.getcwd())
 if WORKSPACE_ROOT.startswith("~"):  # pragma: no cover
     WORKSPACE_ROOT = str(Path(WORKSPACE_ROOT).expanduser())
 
 # Create a global client instance
-lsp_client = LSPClient(LSP_COMMAND)
+lsp_client = LSPClient()
 
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     try:
-        # Start and initialize the LSP server
+        # Start and initialize the LSP server router
         await lsp_client.start()
 
         # Send initialize handshake
@@ -60,8 +57,8 @@ def _prepare_file(filepath: str) -> Path | str:
     return filepath_obj
 
 
-async def _sync_file_with_lsp(filepath_obj: Path) -> str:
-    """Sync file to LSP and return URI."""
+async def _sync_file_with_lsp(filepath_obj: Path) -> tuple[str, str]:
+    """Sync file to LSP and return URI and language ID."""
     uri = filepath_obj.as_uri()
     filepath = str(filepath_obj)
     language_id = "python"
@@ -77,7 +74,7 @@ async def _sync_file_with_lsp(filepath_obj: Path) -> str:
     with open(filepath_obj, encoding="utf-8") as f:
         content = f.read()
     await lsp_client.sync_file(uri, language_id, content)
-    return uri
+    return uri, language_id
 
 
 def _format_location(loc: dict) -> str:
@@ -112,11 +109,11 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
 
         # Send hover request (LSP uses 0-indexed lines)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-        response = await lsp_client.send_request("textDocument/hover", params)
+        response = await lsp_client.send_request(language_id, "textDocument/hover", params)
         if not response:
             return "No hover information found at this position."
 
@@ -152,9 +149,9 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-        response = await lsp_client.send_request("textDocument/definition", params)
+        response = await lsp_client.send_request(language_id, "textDocument/definition", params)
         if not response:
             return "No definition found at this position."
 
@@ -188,13 +185,13 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {
             "textDocument": {"uri": uri},
             "position": {"line": line - 1, "character": char},
             "context": {"includeDeclaration": True},
         }
-        response = await lsp_client.send_request("textDocument/references", params)
+        response = await lsp_client.send_request(language_id, "textDocument/references", params)
         if not response:
             return "No references found at this position."
 
@@ -220,9 +217,9 @@ async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
         return filepath_obj
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}}
-        response = await lsp_client.send_request("textDocument/documentSymbol", params)
+        response = await lsp_client.send_request(language_id, "textDocument/documentSymbol", params)
         if not response:
             return "No symbols found in this document."
 
@@ -244,13 +241,21 @@ async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
     """
     try:
         params = {"query": query}
-        response = await lsp_client.send_request("workspace/symbol", params)
-        if not response:
+        results = []
+        for lang in list(lsp_client.sessions.keys()):
+            try:
+                response = await lsp_client.send_request(lang, "workspace/symbol", params)
+                if response:
+                    results.append({lang: response})
+            except Exception:
+                pass
+
+        if not results:
             return f"No workspace symbols found matching query '{query}'."
 
         import json
 
-        return json.dumps(response, indent=2)
+        return json.dumps(results, indent=2)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -269,12 +274,12 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
         return filepath_obj
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         # We need to give the LSP a moment to process and publish diagnostics.
         # Poll briefly, up to 0.5s.
         diagnostics = None
         for _ in range(5):
-            diagnostics = lsp_client.get_diagnostics(uri)
+            diagnostics = lsp_client.get_diagnostics(uri, language_id)
             if diagnostics is not None:
                 break
             await asyncio.sleep(0.1)
@@ -310,9 +315,9 @@ async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context)
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-        response = await lsp_client.send_request("textDocument/typeDefinition", params)
+        response = await lsp_client.send_request(language_id, "textDocument/typeDefinition", params)
         if not response:
             return "No type definition found at this position."
 
@@ -345,9 +350,9 @@ async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) 
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-        response = await lsp_client.send_request("textDocument/implementation", params)
+        response = await lsp_client.send_request(language_id, "textDocument/implementation", params)
         if not response:
             return "No implementation found at this position."
 
@@ -380,9 +385,11 @@ async def lsp_document_highlight(filepath: str, line: int, char: int, ctx: Conte
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
-        response = await lsp_client.send_request("textDocument/documentHighlight", params)
+        response = await lsp_client.send_request(
+            language_id, "textDocument/documentHighlight", params
+        )
         if not response:
             return "No highlights found at this position."
 
@@ -418,10 +425,12 @@ async def lsp_call_hierarchy(
         return "Error: line must be >= 1 and char must be >= 0"
 
     try:
-        uri = await _sync_file_with_lsp(filepath_obj)
+        uri, language_id = await _sync_file_with_lsp(filepath_obj)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
         # 1. Prepare call hierarchy
-        items = await lsp_client.send_request("textDocument/prepareCallHierarchy", params)
+        items = await lsp_client.send_request(
+            language_id, "textDocument/prepareCallHierarchy", params
+        )
         if not items:
             return "No call hierarchy items found at this position."
 
@@ -433,7 +442,7 @@ async def lsp_call_hierarchy(
             if direction == "incoming"
             else "callHierarchy/outgoingCalls"
         )
-        calls = await lsp_client.send_request(method, call_params)
+        calls = await lsp_client.send_request(language_id, method, call_params)
 
         if not calls:
             return f"No {direction} calls found."
