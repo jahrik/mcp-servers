@@ -1,7 +1,7 @@
 import json
 import pathlib
-
 from typing import Any
+
 from mcp.server.fastmcp import Context
 
 from mcp_servers.lsp import utils
@@ -84,7 +84,7 @@ async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ct
             "position": {"line": line - 1, "character": character},
             "newName": new_name,
         }
-        res = await utils.lsp_client.send_request("textDocument/rename", params, language_id)
+        res = await utils.lsp_client.send_request(language_id, "textDocument/rename", params)
         if not res:
             return "No rename edits returned."
 
@@ -109,7 +109,7 @@ async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Contex
             },
             "context": {"diagnostics": []},
         }
-        res = await utils.lsp_client.send_request("textDocument/codeAction", params, language_id)
+        res = await utils.lsp_client.send_request(language_id, "textDocument/codeAction", params)
         if not res:
             return "No code actions available."
 
@@ -160,7 +160,9 @@ async def lsp_execute_code_action(index: int, ctx: Context) -> str:
 
         try:
             res = await utils.lsp_client.send_request(
-                "workspace/executeCommand", {"command": cmd_name, "arguments": args}, language_id
+                str(language_id),
+                "workspace/executeCommand",
+                {"command": cmd_name, "arguments": args},
             )
             # Some commands might also return a WorkspaceEdit!
             if isinstance(res, dict) and ("changes" in res or "documentChanges" in res):
