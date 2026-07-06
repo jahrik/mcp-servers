@@ -24,6 +24,7 @@ class SubmitJobArgs(BaseModel, frozen=True):
     worker_type: str = Field(
         ...,
         pattern=r"^[a-zA-Z0-9_-]+$",
+        max_length=256,
         description="The type of worker to handle this job.",
     )
     payload: dict[str, Any] = Field(

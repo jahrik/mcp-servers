@@ -194,3 +194,70 @@ def test_submit_job_subprocess_exception(
 
     assert row is not None
     assert row["status"] == "Failed"
+
+
+def test_update_job_status_terminal_is_immutable(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
+
+    # First move to a terminal state.
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED))
+
+    # Any further transition is rejected and the status stays terminal.
+    res = json.loads(
+        jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id, status=JobStatus.RUNNING))
+    )
+    assert "error" in res
+    assert "terminal" in res["error"]
+
+    status = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=job_id)))
+    assert status["status"] == "Completed"
+
+
+def test_submit_job_rejects_oversized_payload(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    oversized = {"blob": "x" * (jobs.MAX_PAYLOAD_BYTES + 1)}
+    with pytest.raises(ValueError, match="exceeds the"):
+        jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload=oversized))
+
+    # Rejected before the DB is even touched — nothing persisted or spawned.
+    mock_subprocess.assert_not_called()
+    assert not mock_db.exists()
+
+
+def test_submit_job_rejects_overlong_worker_type() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        SubmitJobArgs(worker_type="a" * 257, payload={})
+
+
+def test_connections_are_closed(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every SQLite connection the tools open must be closed (no fd leak)."""
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+
+    real_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def tracking_connect(database: str | Path) -> sqlite3.Connection:
+        conn = real_connect(database)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(jobs.sqlite3, "connect", tracking_connect)
+
+    jid = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={"n": 1}))
+    jobs.get_job_status(GetJobStatusArgs(job_id=jid))
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=jid, status=JobStatus.COMPLETED))
+
+    assert opened, "expected the tools to open at least one connection"
+    # A closed sqlite3 connection raises ProgrammingError when used again.
+    for conn in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
