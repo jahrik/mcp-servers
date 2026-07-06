@@ -29,6 +29,8 @@ every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_
 `root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
 mutates a working copy and needs no credentials.
 
+[Read the detailed `workspace` server documentation](docs/workspace.md).
+
 ### `data`
 
 Local data analysis without burning agent context: run SQL over large CSV/JSON/JSONL/Parquet
