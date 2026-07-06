@@ -51,3 +51,25 @@ class UpdateJobStatusArgs(BaseModel, frozen=True):
         ...,
         description="New status: one of Running, Completed, or Failed.",
     )
+
+
+class ListJobsArgs(BaseModel, frozen=True):
+    status: JobStatus | None = Field(
+        None,
+        description="Optional status to filter by.",
+    )
+    limit: int = Field(
+        50,
+        ge=1,
+        le=500,
+        description="Maximum number of jobs to return.",
+    )
+
+
+class CleanupJobsArgs(BaseModel, frozen=True):
+    older_than_days: int | None = Field(
+        None,
+        ge=0,
+        description="Only delete terminal jobs whose last update is older than this many "
+        "days. Omit to delete all terminal (Completed/Failed) jobs.",
+    )

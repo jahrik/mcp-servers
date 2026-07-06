@@ -6,16 +6,52 @@ import os
 import sqlite3
 import subprocess
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ..models.schemas import GetJobStatusArgs, JobStatus, SubmitJobArgs, UpdateJobStatusArgs
+from ..models.schemas import (
+    CleanupJobsArgs,
+    GetJobStatusArgs,
+    JobStatus,
+    ListJobsArgs,
+    SubmitJobArgs,
+    UpdateJobStatusArgs,
+)
 
 # Cap the serialized payload so a single job can't bloat the row / DB unboundedly.
 # Job payloads are task specs, not bulk data; 1 MiB is generous headroom.
 MAX_PAYLOAD_BYTES = 1024 * 1024
 
 _TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED.value, JobStatus.FAILED.value})
+
+# Default ceiling on concurrently-``Running`` jobs. Each Running job holds a
+# spawned worker, so this bounds fan-out (a single loop of submits can't launch
+# unbounded agents). Override with MCP_DISPATCHER_MAX_RUNNING.
+_DEFAULT_MAX_RUNNING = 16
+
+
+def _reap_children() -> None:
+    """Reap any finished children so they don't accumulate as zombies."""
+    try:
+        while True:
+            # -1 means any child process. WNOHANG returns immediately if none have exited.
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        # Raised if there are no children at all.
+        pass
+
+
+def _max_running() -> int:
+    raw = os.environ.get("MCP_DISPATCHER_MAX_RUNNING")
+    if raw is None:
+        return _DEFAULT_MAX_RUNNING
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_MAX_RUNNING
+    return value if value > 0 else _DEFAULT_MAX_RUNNING
 
 
 def get_db_path() -> Path:
@@ -70,18 +106,39 @@ def submit_job(args: SubmitJobArgs) -> str:
             f"Payload is {payload_bytes} bytes, exceeds the {MAX_PAYLOAD_BYTES}-byte limit"
         )
 
+    # Reap any finished workers first so the Running count reflects reality.
+    _reap_children()
+
     _init_db()
     job_id = str(uuid.uuid4())
     db_path = get_db_path()
     now = _now()
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
-        conn.execute(
-            "INSERT INTO jobs (id, status, worker_type, payload, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (job_id, JobStatus.RUNNING.value, args.worker_type, payload_str, now, now),
-        )
-        conn.commit()
+        conn.isolation_level = None
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Bound fan-out: refuse to spawn once too many jobs are already Running.
+            cap = _max_running()
+            running = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE status = ?", (JobStatus.RUNNING.value,)
+                ).fetchone()[0]
+            )
+            if running >= cap:
+                raise RuntimeError(
+                    f"Too many jobs in flight: {running} Running >= cap {cap}. "
+                    "Wait for jobs to finish or raise MCP_DISPATCHER_MAX_RUNNING."
+                )
+            conn.execute(
+                "INSERT INTO jobs (id, status, worker_type, payload, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, JobStatus.RUNNING.value, args.worker_type, payload_str, now, now),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     env = {k: v for k, v in os.environ.items() if k in {"PATH", "USER", "HOME", "LANG", "LC_ALL"}}
     env["AGY_JOB_ID"] = job_id
@@ -177,3 +234,52 @@ def update_job_status(args: UpdateJobStatusArgs) -> str:
 
     job_data = _fetch_job(db_path, args.job_id)
     return json.dumps(job_data)
+
+
+def list_jobs(args: ListJobsArgs) -> str:
+    """Lists jobs, ordered by created_at DESC."""
+    _init_db()
+    db_path = get_db_path()
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+
+        query = "SELECT id, status, worker_type, created_at, updated_at FROM jobs"
+        params: list[object] = []
+        if args.status is not None:
+            query += " WHERE status = ?"
+            params.append(args.status.value)
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(args.limit)
+
+        cursor = conn.execute(query, tuple(params))
+        rows = cursor.fetchall()
+
+    return json.dumps([dict(row) for row in rows])
+
+
+def cleanup_jobs(args: CleanupJobsArgs) -> str:
+    """Delete terminal (Completed/Failed) jobs to bound table growth.
+
+    Only terminal jobs are ever removed, so an in-flight ``Running`` job is never
+    dropped. With ``older_than_days`` set, only terminal jobs whose last update is
+    older than the cutoff are deleted; otherwise all terminal jobs are removed.
+    """
+    _init_db()
+    db_path = get_db_path()
+
+    terminal = tuple(_TERMINAL_STATUSES)
+    placeholders = ", ".join("?" for _ in terminal)
+    query = f"DELETE FROM jobs WHERE status IN ({placeholders})"  # noqa: S608 — placeholders only
+    params: list[object] = [*terminal]
+    if args.older_than_days is not None:
+        cutoff = (datetime.now(UTC) - timedelta(days=args.older_than_days)).isoformat()
+        query += " AND updated_at < ?"
+        params.append(cutoff)
+
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        cursor = conn.execute(query, tuple(params))
+        conn.commit()
+        deleted = cursor.rowcount
+
+    return json.dumps({"deleted": deleted})

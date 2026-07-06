@@ -44,11 +44,19 @@ the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query
 
 ### `dispatcher`
 
-Asynchronous agent-to-agent task delegation and orchestration. Exposes `submit_job` and `get_job_status` tools to allow agents to spawn and monitor background subagents for long-running workflows.
+Asynchronous agent-to-agent task delegation and orchestration. Lets agents spawn and monitor background subagents for long-running workflows.
+
+**Tools:**
+- `submit_job` — persist a job and spawn a background worker to run it.
+- `get_job_status` — fetch one job by id (status, payload, timestamps).
+- `update_job_status` — set a job's status; terminal states are immutable.
+- `list_jobs` — list jobs (optional status filter, `limit`), newest first.
+- `cleanup_jobs` — delete terminal jobs, optionally only those older than N days.
 
 **Configuration:**
 - `MCP_DISPATCHER_ALLOW_SPAWN` (Required): Must be set to `"true"` or `"1"` to allow `submit_job` to spawn background processes.
 - `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.mcp/dispatcher.db`).
+- `MCP_DISPATCHER_MAX_RUNNING`: Max concurrently-`Running` jobs before `submit_job` is refused (default `16`).
 
 ## Install
 
