@@ -206,10 +206,16 @@ async def test_initialize(client):
 
 
 @pytest.mark.asyncio
-async def test_open_file(client):
+async def test_sync_file(client):
     client.send_notification = AsyncMock()
-    await client.open_file("file:///tmp/test.py", "python", "print('hello')")
-    assert client.send_notification.call_count == 2
+    await client.sync_file("file:///tmp/test.py", "python", "print('hello')")
+    client.send_notification.assert_called_once()
+    assert "didOpen" in client.send_notification.call_args[0][0]
+
+    client.send_notification.reset_mock()
+    await client.sync_file("file:///tmp/test.py", "python", "print('hello world')")
+    client.send_notification.assert_called_once()
+    assert "didChange" in client.send_notification.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -383,3 +389,26 @@ async def test_read_loop_cancellation_and_cleanup(client, mock_process):
     with pytest.raises(RuntimeError, match="LSP connection closed"):
         future.result()
     assert len(client._pending_requests) == 0
+
+
+@pytest.mark.asyncio
+async def test_read_loop_unhandled_method_send_error(client, mock_process):
+    body = b'{"jsonrpc": "2.0", "id": 999, "method": "unknown/method"}'
+    mock_process.stdout.readline.side_effect = [
+        b"Content-Length: " + str(len(body)).encode("utf-8") + b"\r\n",
+        b"\r\n",
+        b"",  # EOF
+    ]
+    mock_process.stdout.readexactly = AsyncMock(return_value=body)
+    client._process = mock_process
+
+    # Mock _send to raise an exception
+    client._send = AsyncMock(side_effect=Exception("mock send error"))
+
+    await client._read_loop()
+
+    # Yield to the event loop so the background task runs
+    await asyncio.sleep(0.01)
+
+    # Should be called to send the error response, and the exception should be caught silently
+    client._send.assert_called_once()

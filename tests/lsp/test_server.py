@@ -51,7 +51,7 @@ async def test_lsp_hover_success():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock()
+        mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"contents": {"value": "docstring"}})
 
         res = await lsp_hover("/path/to/file.py", 1, 0, ctx)
@@ -59,10 +59,10 @@ async def test_lsp_hover_success():
 
         # Test go / rust language deduction
         await lsp_hover("/path/to/file.go", 1, 0, ctx)
-        mock_client.open_file.assert_called_with("file:///path/to/file.go", "go", "def foo(): pass")
+        mock_client.sync_file.assert_called_with("file:///path/to/file.go", "go", "def foo(): pass")
 
         await lsp_hover("/path/to/file.rs", 1, 0, ctx)
-        mock_client.open_file.assert_called_with(
+        mock_client.sync_file.assert_called_with(
             "file:///path/to/file.rs", "rust", "def foo(): pass"
         )
 
@@ -75,7 +75,7 @@ async def test_lsp_hover_empty_response():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock()
+        mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=None)
 
         res = await lsp_hover("/path/to/file.py", 1, 0, ctx)
@@ -90,7 +90,7 @@ async def test_lsp_hover_list_response():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock()
+        mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(
             return_value={"contents": [{"value": "def foo()"}, "string_content"]}
         )
@@ -107,7 +107,7 @@ async def test_lsp_hover_string_response():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock()
+        mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"contents": "just a string"})
 
         res = await lsp_hover("/path/to/file.py", 1, 0, ctx)
@@ -122,7 +122,7 @@ async def test_lsp_hover_error():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock(side_effect=Exception("mock error"))
+        mock_client.sync_file = AsyncMock(side_effect=Exception("mock error"))
 
         res = await lsp_hover("/path/to/file.py", 1, 0, ctx)
         assert res == "Error querying LSP: mock error"
@@ -138,7 +138,7 @@ async def test_lsp_hover_cancelled():
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.server.lsp_client") as mock_client,
     ):
-        mock_client.open_file = AsyncMock(side_effect=asyncio.CancelledError())
+        mock_client.sync_file = AsyncMock(side_effect=asyncio.CancelledError())
 
         with pytest.raises(asyncio.CancelledError):
             await lsp_hover("/path/to/file.py", 1, 0, ctx)

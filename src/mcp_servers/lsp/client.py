@@ -28,6 +28,7 @@ class LSPClient:
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._read_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        self._document_versions: dict[str, int] = {}
 
     async def start(self) -> None:
         """Start the LSP subprocess."""
@@ -105,7 +106,8 @@ class LSPClient:
                             logger.error(f"Invalid Content-Length header: {line_str}")
 
                 if content_length == 0:
-                    continue
+                    logger.error("No Content-Length provided or 0, breaking to avoid stream desync")
+                    break
 
                 # Read body
                 body_bytes = await self._process.stdout.readexactly(content_length)
@@ -175,7 +177,14 @@ class LSPClient:
                     "id": req_id,
                     "error": {"code": -32601, "message": f"Method '{method}' not implemented"},
                 }
-                asyncio.create_task(self._send(error_response))
+
+                async def _send_error():
+                    try:
+                        await self._send(error_response)
+                    except Exception as e:
+                        logger.error(f"Failed to send method not found error: {e}")
+
+                asyncio.create_task(_send_error())
         else:
             logger.warning(f"Received unhandled LSP payload type: {payload}")
 
@@ -207,16 +216,15 @@ class LSPClient:
 
         future: asyncio.Future[Any] = asyncio.Future()
         self._pending_requests[req_id] = future
-
-        await self._send(payload)
-
         try:
+            await self._send(payload)
             if timeout is not None:
                 return await asyncio.wait_for(future, timeout=timeout)
             return await future
         except TimeoutError as err:
-            self._pending_requests.pop(req_id, None)
             raise TimeoutError(f"LSP Request {method} timed out after {timeout}s") from err
+        finally:
+            self._pending_requests.pop(req_id, None)
 
     async def send_notification(self, method: str, params: Any = None) -> None:
         """Send a JSON-RPC notification (no response expected)."""
@@ -261,10 +269,27 @@ class LSPClient:
         await self.send_notification("initialized", {})
         return result
 
-    async def open_file(self, uri: str, language_id: str, text: str) -> None:
-        """Send a didOpen notification to the language server."""
-        await self.send_notification("textDocument/didClose", {"textDocument": {"uri": uri}})
-        await self.send_notification(
-            "textDocument/didOpen",
-            {"textDocument": {"uri": uri, "languageId": language_id, "version": 1, "text": text}},
-        )
+    async def sync_file(self, uri: str, language_id: str, text: str) -> None:
+        """Synchronize the file content with the language server via didOpen/didChange."""
+        if uri not in self._document_versions:
+            self._document_versions[uri] = 1
+            await self.send_notification(
+                "textDocument/didOpen",
+                {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": language_id,
+                        "version": 1,
+                        "text": text,
+                    }
+                },
+            )
+        else:
+            self._document_versions[uri] += 1
+            await self.send_notification(
+                "textDocument/didChange",
+                {
+                    "textDocument": {"uri": uri, "version": self._document_versions[uri]},
+                    "contentChanges": [{"text": text}],
+                },
+            )

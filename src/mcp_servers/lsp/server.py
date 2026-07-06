@@ -61,7 +61,7 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
 
     uri = filepath_obj.as_uri()
 
-    # Send didOpen to synchronize VFS
+    # Send didOpen/didChange to synchronize VFS
     language_id = "python"
     if filepath.endswith(".go"):
         language_id = "go"
@@ -69,7 +69,7 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
         language_id = "rust"
 
     try:
-        await lsp_client.open_file(uri, language_id, content)
+        await lsp_client.sync_file(uri, language_id, content)
 
         # Send hover request (LSP uses 0-indexed lines)
         params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
