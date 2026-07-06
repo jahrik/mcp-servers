@@ -14,6 +14,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     # duckdb's Python API needs pytz to return TIMESTAMPTZ values
     "pytz>=2024.1",
+    "pydantic>=2.7.0",
 ]
 
 [project.scripts]

@@ -371,13 +371,14 @@ wheels = [
 
 [[package]]
 name = "mcp-servers"
-version = "0.3.1.dev5+g1662c1d1e.d20260706"
+version = "0.3.1.dev12+g3fe758490.d20260706"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
     { name = "httpx" },
     { name = "jq" },
     { name = "mcp" },
+    { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pytz" },
 ]
@@ -400,6 +401,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jq", specifier = ">=1.11.0" },
     { name = "mcp", specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pyjwt", specifier = ">=2.13.0" },
     { name = "pytz", specifier = ">=2024.1" },
 ]

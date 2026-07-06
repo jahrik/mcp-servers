@@ -69,10 +69,17 @@ def submit_job(args: SubmitJobArgs) -> str:
     env["AGY_WORKER_TYPE"] = args.worker_type
     env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
 
+    jobs_dir = db_path.parent / "jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    payload_file = jobs_dir / f"{job_id}.json"
+    payload_file.write_text(payload_str)
+
+    prompt = f"You are a background worker for the '{args.worker_type}' subagent. Please read your job payload from {payload_file} and execute the task. When finished, you must update the job status in the dispatcher DB."
+
     # Asynchronously spawn the worker
     try:
         subprocess.Popen(
-            ["agy", f"--print={payload_str}"],
+            ["agy", f"--print={prompt}"],
             start_new_session=True,
             env=env,
             stdout=subprocess.DEVNULL,

@@ -38,9 +38,8 @@ def test_submit_job(
     mock_subprocess.assert_called_once()
     args, kwargs = mock_subprocess.call_args
     assert args[0][0] == "agy"
-    assert args[0][1].startswith("--print=")
-    payload = json.loads(args[0][1].removeprefix("--print="))
-    assert payload == {"foo": "bar"}
+    assert args[0][1].startswith("--print=You are a background worker")
+    assert f"{job_id}.json" in args[0][1]
     assert kwargs.get("start_new_session") is True
     assert kwargs.get("stdout") == subprocess.DEVNULL
     assert kwargs.get("stderr") == subprocess.DEVNULL
