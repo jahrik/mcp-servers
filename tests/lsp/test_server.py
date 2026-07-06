@@ -2,7 +2,8 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
-from mcp_servers.lsp.server import (
+from mcp_servers.lsp.server import main, server_lifespan
+from mcp_servers.lsp.tools import (
     lsp_call_hierarchy,
     lsp_definition,
     lsp_diagnostics,
@@ -13,20 +14,18 @@ from mcp_servers.lsp.server import (
     lsp_references,
     lsp_type_definition,
     lsp_workspace_symbols,
-    main,
-    server_lifespan,
 )
 
 
 @pytest.fixture(autouse=True)
 def mock_workspace_root():
-    with patch("mcp_servers.lsp.server.WORKSPACE_ROOT", "/"):
+    with patch("mcp_servers.lsp.utils.WORKSPACE_ROOT", "/"):
         yield
 
 
 @pytest.mark.asyncio
 async def test_server_lifespan():
-    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
         mock_client.start = AsyncMock()
         mock_client.initialize = AsyncMock()
         mock_client.stop = AsyncMock()
@@ -68,7 +67,7 @@ async def test_lsp_hover_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"contents": {"value": "docstring"}})
@@ -102,7 +101,7 @@ async def test_lsp_hover_empty_response():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=None)
@@ -117,7 +116,7 @@ async def test_lsp_hover_list_response():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(
@@ -134,7 +133,7 @@ async def test_lsp_hover_string_response():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"contents": "just a string"})
@@ -149,7 +148,7 @@ async def test_lsp_hover_error():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock(side_effect=Exception("mock error"))
 
@@ -165,7 +164,7 @@ async def test_lsp_hover_cancelled():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock(side_effect=asyncio.CancelledError())
 
@@ -176,7 +175,7 @@ async def test_lsp_hover_cancelled():
 @pytest.mark.asyncio
 async def test_lsp_hover_outside_workspace():
     ctx = MagicMock()
-    with patch("mcp_servers.lsp.server.WORKSPACE_ROOT", "/var/lib"):
+    with patch("mcp_servers.lsp.utils.WORKSPACE_ROOT", "/var/lib"):
         res = await lsp_hover("/tmp/foo.py", 1, 1, ctx)
         assert "must be within the workspace root" in res
 
@@ -193,7 +192,7 @@ async def test_lsp_definition_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path", "range": {}}])
@@ -208,7 +207,7 @@ async def test_lsp_references_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path", "range": {}}])
@@ -223,7 +222,7 @@ async def test_lsp_document_symbols_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
@@ -233,7 +232,7 @@ async def test_lsp_document_symbols_success():
 
 
 def test_format_location():
-    from mcp_servers.lsp.server import _format_location
+    from mcp_servers.lsp.utils import _format_location
 
     # Test LocationLink
     assert (
@@ -258,14 +257,14 @@ def test_format_location():
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from mcp_servers.lsp.server import lsp_definition
+    from mcp_servers.lsp.tools import lsp_definition
 
     async def _test():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
-            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+            patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
             mock_client.sync_file = AsyncMock()
             mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
@@ -279,14 +278,14 @@ def test_lsp_definition_string_fallback():
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from mcp_servers.lsp.server import lsp_definition
+    from mcp_servers.lsp.tools import lsp_definition
 
     async def _test():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
-            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+            patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
             mock_client.sync_file = AsyncMock()
             mock_client.send_request = AsyncMock(return_value="some string")
@@ -300,14 +299,14 @@ def test_lsp_references_string_fallback():
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from mcp_servers.lsp.server import lsp_references
+    from mcp_servers.lsp.tools import lsp_references
 
     async def _test():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
-            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+            patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
             mock_client.sync_file = AsyncMock()
             mock_client.send_request = AsyncMock(return_value="some string")
@@ -323,7 +322,7 @@ async def test_lsp_diagnostics_with_items():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.get_diagnostics = MagicMock(return_value=[{"message": "err"}])
@@ -338,7 +337,7 @@ async def test_lsp_diagnostics_empty():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.get_diagnostics = MagicMock(return_value=[])
@@ -350,7 +349,7 @@ async def test_lsp_diagnostics_empty():
 @pytest.mark.asyncio
 async def test_lsp_workspace_symbols_success():
     ctx = MagicMock()
-    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
         mock_client.sessions = {"python": MagicMock()}
         mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
 
@@ -364,7 +363,7 @@ async def test_lsp_diagnostics_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         mock_client.sync_file = AsyncMock()
@@ -416,7 +415,7 @@ async def test_lsp_tools_cancelled(tool_func, args):
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sessions = {"python": MagicMock()}
         mock_client.sync_file = AsyncMock(side_effect=asyncio.CancelledError())
@@ -444,7 +443,7 @@ async def test_lsp_tools_exception(tool_func, args):
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sessions = {"python": MagicMock()}
         mock_client.sync_file = AsyncMock(side_effect=Exception("mock error"))
@@ -491,7 +490,7 @@ async def test_lsp_tools_no_response(tool_func, args):
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         mock_client.sync_file = AsyncMock()
@@ -514,7 +513,7 @@ async def test_lsp_call_hierarchy_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(
@@ -534,7 +533,7 @@ async def test_lsp_call_hierarchy_no_calls():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(
@@ -554,7 +553,7 @@ async def test_lsp_call_hierarchy_no_items():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=None)
@@ -569,7 +568,7 @@ async def test_lsp_type_definition_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
@@ -584,7 +583,7 @@ async def test_lsp_type_definition_list_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(
@@ -605,7 +604,7 @@ async def test_lsp_implementation_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
@@ -620,7 +619,7 @@ async def test_lsp_implementation_list_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path1", "range": {}}])
@@ -635,7 +634,7 @@ async def test_lsp_document_highlight_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value=[{"range": {}}])
@@ -650,7 +649,7 @@ async def test_lsp_type_definition_string_fallback():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value="some string")
@@ -664,7 +663,7 @@ async def test_lsp_implementation_string_fallback():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
-        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
         mock_client.sync_file = AsyncMock()
         mock_client.send_request = AsyncMock(return_value="some string")
@@ -682,10 +681,10 @@ async def test_lsp_call_hierarchy_invalid_line_char():
 
 @pytest.mark.asyncio
 async def test_lsp_workspace_symbols_all_fail():
-    from mcp_servers.lsp.server import lsp_workspace_symbols
+    from mcp_servers.lsp.tools import lsp_workspace_symbols
 
     ctx = MagicMock()
-    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
         mock_client.sessions = {"python": MagicMock(), "go": MagicMock()}
         mock_client.send_request = AsyncMock(side_effect=Exception("mock err"))
 
@@ -698,10 +697,10 @@ async def test_lsp_workspace_symbols_all_fail():
 async def test_lsp_workspace_symbols_outer_exception():
     from unittest.mock import PropertyMock
 
-    from mcp_servers.lsp.server import lsp_workspace_symbols
+    from mcp_servers.lsp.tools import lsp_workspace_symbols
 
     ctx = MagicMock()
-    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
         type(mock_client).sessions = PropertyMock(side_effect=Exception("mock err"))
         res = await lsp_workspace_symbols("query", ctx)
         assert "Error querying LSP" in res
@@ -712,10 +711,10 @@ async def test_lsp_workspace_symbols_outer_cancelled():
     import asyncio
     from unittest.mock import PropertyMock
 
-    from mcp_servers.lsp.server import lsp_workspace_symbols
+    from mcp_servers.lsp.tools import lsp_workspace_symbols
 
     ctx = MagicMock()
-    with patch("mcp_servers.lsp.server.lsp_client") as mock_client:
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
         type(mock_client).sessions = PropertyMock(side_effect=asyncio.CancelledError())
         with pytest.raises(asyncio.CancelledError):
             await lsp_workspace_symbols("query", ctx)
