@@ -14,6 +14,7 @@ mcp = FastMCP("dispatcher")
 # Register tools
 mcp.tool()(tools.submit_job)
 mcp.tool()(tools.get_job_status)
+mcp.tool()(tools.update_job_status)
 
 
 def main() -> None:

@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mcp_servers.dispatcher import server
-from mcp_servers.dispatcher.models.schemas import GetJobStatusArgs, SubmitJobArgs
+from mcp_servers.dispatcher.models.schemas import (
+    GetJobStatusArgs,
+    JobStatus,
+    SubmitJobArgs,
+    UpdateJobStatusArgs,
+)
 from mcp_servers.dispatcher.tools import jobs
 
 
@@ -98,6 +103,53 @@ def test_get_job_status_invalid_json(
     status_str = jobs.get_job_status(GetJobStatusArgs(job_id=job_id))
     status = json.loads(status_str)
     assert status["payload"] == {"error": "Invalid JSON in database"}
+
+
+def test_submit_job_stamps_timestamps(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
+
+    status = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=job_id)))
+    assert status["created_at"] is not None
+    # A brand-new job hasn't been updated since creation.
+    assert status["updated_at"] == status["created_at"]
+
+
+def test_update_job_status(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"k": "v"}))
+
+    res = json.loads(
+        jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED))
+    )
+    assert res["status"] == "Completed"
+    assert res["payload"] == {"k": "v"}
+    assert res["updated_at"] is not None
+
+
+def test_update_job_status_not_found(mock_db: Path) -> None:
+    res = json.loads(
+        jobs.update_job_status(
+            UpdateJobStatusArgs(
+                job_id="00000000-0000-0000-0000-000000000000", status=JobStatus.FAILED
+            )
+        )
+    )
+    assert "error" in res
+
+
+def test_update_job_status_rejects_unknown_status() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        UpdateJobStatusArgs(
+            job_id="00000000-0000-0000-0000-000000000000",
+            status="Bogus",  # ty: ignore[invalid-argument-type]
+        )
 
 
 def test_server_main(monkeypatch: pytest.MonkeyPatch) -> None:
