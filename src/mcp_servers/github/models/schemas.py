@@ -65,7 +65,7 @@ class PrRequestReviewersArgs(BaseModel, frozen=True):
         None, description="List of usernames to request review from."
     )
     team_reviewers: list[str] | None = Field(
-        None, description="List of team names to request review from."
+        None, description="List of team slugs to request review from."
     )
 
 

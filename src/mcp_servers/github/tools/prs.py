@@ -194,8 +194,23 @@ async def gh_pr_request_reviewers(args: PrRequestReviewersArgs) -> str:
         data["reviewers"] = args.reviewers
     if args.team_reviewers:
         data["team_reviewers"] = args.team_reviewers
-    resp = await gh_request("POST", f"repos/{repo}/pulls/{pr}/requested_reviewers", json=data)
-    return json.dumps(resp.json())
+
+    try:
+        resp = await gh_request("POST", f"repos/{repo}/pulls/{pr}/requested_reviewers", json=data)
+        return json.dumps(resp.json())
+    except GhError as e:
+        if e.status_code == 422:
+            try:
+                details = json.loads(e.stderr) if e.stderr else {}
+            except json.JSONDecodeError:  # pragma: no cover
+                details = {"raw": e.stderr}
+            return json.dumps(
+                {
+                    "warning": "GitHub returned 422. Reviewers may already be requested, or you tried to request the PR author.",
+                    "details": details,
+                }
+            )
+        raise
 
 
 @_audit_log

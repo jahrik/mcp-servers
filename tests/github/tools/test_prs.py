@@ -251,3 +251,43 @@ async def test_gh_pr_request_reviewers_validation_error(monkeypatch):
                 pr=1,
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_422(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        status_code=422,
+        json={"message": "Review cannot be requested from pull request author."},
+    )
+    res = await gh_pr_request_reviewers(
+        PrRequestReviewersArgs(
+            repo="octocat/repo",
+            pr=1,
+            reviewers=["author"],
+        )
+    )
+    data = json.loads(res)
+    assert "warning" in data
+    assert data["details"]["message"] == "Review cannot be requested from pull request author."
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_other_error(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        status_code=500,
+        text="Internal Server Error",
+    )
+    from mcp_servers.github.client import GhError
+
+    with pytest.raises(GhError, match="GitHub API request failed: 500"):
+        await gh_pr_request_reviewers(
+            PrRequestReviewersArgs(
+                repo="octocat/repo",
+                pr=1,
+                reviewers=["user1"],
+            )
+        )
