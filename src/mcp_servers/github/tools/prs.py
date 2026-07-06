@@ -11,6 +11,7 @@ from ..models.schemas import (
     PrEditArgs,
     PrListArgs,
     PrMergeArgs,
+    PrRequestReviewersArgs,
 )
 from ..utils import _audit_log
 
@@ -177,6 +178,23 @@ async def gh_pr_comment(args: PrCommentArgs) -> str:
     pr = args.pr
     validate_repo(repo)
     resp = await gh_request("POST", f"repos/{repo}/issues/{pr}/comments", json={"body": args.body})
+    return json.dumps(resp.json())
+
+
+@_audit_log
+async def gh_pr_request_reviewers(args: PrRequestReviewersArgs) -> str:
+    """Request reviewers for a pull request."""
+    if not args.reviewers and not args.team_reviewers:
+        raise ValueError("Must provide either reviewers or team_reviewers")
+    repo = args.repo
+    pr = args.pr
+    validate_repo(repo)
+    data: dict[str, list[str]] = {}
+    if args.reviewers:
+        data["reviewers"] = args.reviewers
+    if args.team_reviewers:
+        data["team_reviewers"] = args.team_reviewers
+    resp = await gh_request("POST", f"repos/{repo}/pulls/{pr}/requested_reviewers", json=data)
     return json.dumps(resp.json())
 
 

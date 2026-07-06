@@ -140,6 +140,7 @@ The review-read tools take `bot_only` to keep just the Copilot/bot comments — 
 - `gh_pr_edit`
 - `gh_pr_comment`
 - `gh_pr_merge`
+- `gh_pr_request_reviewers`
 - `gh_issue_create`
 - `gh_issue_comment`
 - `gh_review_comment_reply`

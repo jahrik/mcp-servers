@@ -9,6 +9,7 @@ from mcp_servers.github.models.schemas import (
     PrEditArgs,
     PrListArgs,
     PrMergeArgs,
+    PrRequestReviewersArgs,
 )
 from mcp_servers.github.tools.prs import (
     _check_bucket,
@@ -20,6 +21,7 @@ from mcp_servers.github.tools.prs import (
     gh_pr_get,
     gh_pr_list,
     gh_pr_merge,
+    gh_pr_request_reviewers,
 )
 
 
@@ -201,3 +203,51 @@ async def test_gh_pr_checks_missing_sha(httpx_mock):
     )
     with pytest.raises(GhError, match="PR head SHA unavailable"):
         await gh_pr_checks(PrArgs(repo="octocat/repo", number=1))
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        json={"requested_reviewers": [{"login": "user1"}]},
+    )
+    res = await gh_pr_request_reviewers(
+        PrRequestReviewersArgs(
+            repo="octocat/repo",
+            pr=1,
+            reviewers=["user1"],
+        )
+    )
+    data = json.loads(res)
+    assert data["requested_reviewers"][0]["login"] == "user1"
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_team(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        json={"requested_teams": [{"slug": "justice-league"}]},
+    )
+    res = await gh_pr_request_reviewers(
+        PrRequestReviewersArgs(
+            repo="octocat/repo",
+            pr=1,
+            team_reviewers=["justice-league"],
+        )
+    )
+    data = json.loads(res)
+    assert data["requested_teams"][0]["slug"] == "justice-league"
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_validation_error(monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    with pytest.raises(ValueError, match="Must provide either reviewers or team_reviewers"):
+        await gh_pr_request_reviewers(
+            PrRequestReviewersArgs(
+                repo="octocat/repo",
+                pr=1,
+            )
+        )
