@@ -271,6 +271,10 @@ class LSPClient:
                     "definition": {"dynamicRegistration": False},
                     "references": {"dynamicRegistration": False},
                     "documentSymbol": {"dynamicRegistration": False},
+                    "callHierarchy": {"dynamicRegistration": False},
+                    "typeDefinition": {"dynamicRegistration": False},
+                    "implementation": {"dynamicRegistration": False},
+                    "documentHighlight": {"dynamicRegistration": False},
                 },
             },
         }

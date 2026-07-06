@@ -3,11 +3,15 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 import pytest
 
 from mcp_servers.lsp.server import (
+    lsp_call_hierarchy,
     lsp_definition,
     lsp_diagnostics,
+    lsp_document_highlight,
     lsp_document_symbols,
     lsp_hover,
+    lsp_implementation,
     lsp_references,
+    lsp_type_definition,
     lsp_workspace_symbols,
     main,
     server_lifespan,
@@ -377,6 +381,10 @@ async def test_lsp_diagnostics_success():
         (lsp_references, ("/absolute/not/found.py", 1, 0)),
         (lsp_document_symbols, ("/absolute/not/found.py",)),
         (lsp_diagnostics, ("/absolute/not/found.py",)),
+        (lsp_type_definition, ("/absolute/not/found.py", 1, 0)),
+        (lsp_implementation, ("/absolute/not/found.py", 1, 0)),
+        (lsp_document_highlight, ("/absolute/not/found.py", 1, 0)),
+        (lsp_call_hierarchy, ("/absolute/not/found.py", 1, 0, "incoming")),
     ],
 )
 async def test_lsp_tools_file_not_found(tool_func, args):
@@ -394,6 +402,10 @@ async def test_lsp_tools_file_not_found(tool_func, args):
         (lsp_document_symbols, ("/path/to/file.py",)),
         (lsp_diagnostics, ("/path/to/file.py",)),
         (lsp_workspace_symbols, ("query",)),
+        (lsp_type_definition, ("/path/to/file.py", 1, 0)),
+        (lsp_implementation, ("/path/to/file.py", 1, 0)),
+        (lsp_document_highlight, ("/path/to/file.py", 1, 0)),
+        (lsp_call_hierarchy, ("/path/to/file.py", 1, 0, "incoming")),
     ],
 )
 async def test_lsp_tools_cancelled(tool_func, args):
@@ -420,6 +432,10 @@ async def test_lsp_tools_cancelled(tool_func, args):
         (lsp_document_symbols, ("/path/to/file.py",)),
         (lsp_diagnostics, ("/path/to/file.py",)),
         (lsp_workspace_symbols, ("query",)),
+        (lsp_type_definition, ("/path/to/file.py", 1, 0)),
+        (lsp_implementation, ("/path/to/file.py", 1, 0)),
+        (lsp_document_highlight, ("/path/to/file.py", 1, 0)),
+        (lsp_call_hierarchy, ("/path/to/file.py", 1, 0, "incoming")),
     ],
 )
 async def test_lsp_tools_exception(tool_func, args):
@@ -441,6 +457,9 @@ async def test_lsp_tools_exception(tool_func, args):
     [
         lsp_definition,
         lsp_references,
+        lsp_type_definition,
+        lsp_implementation,
+        lsp_document_highlight,
     ],
 )
 async def test_lsp_tools_invalid_line_char(tool_func):
@@ -459,6 +478,10 @@ async def test_lsp_tools_invalid_line_char(tool_func):
         (lsp_document_symbols, ("/path/to/file.py",)),
         (lsp_workspace_symbols, ("query",)),
         (lsp_diagnostics, ("/path/to/file.py",)),
+        (lsp_type_definition, ("/path/to/file.py", 1, 0)),
+        (lsp_implementation, ("/path/to/file.py", 1, 0)),
+        (lsp_document_highlight, ("/path/to/file.py", 1, 0)),
+        (lsp_call_hierarchy, ("/path/to/file.py", 1, 0, "incoming")),
     ],
 )
 async def test_lsp_tools_no_response(tool_func, args):
@@ -474,3 +497,182 @@ async def test_lsp_tools_no_response(tool_func, args):
         mock_client.get_diagnostics = MagicMock(return_value=None)
         res = await tool_func(*args, ctx)
         assert "No" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_invalid_direction():
+    ctx = MagicMock()
+    res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "invalid", ctx)
+    assert "direction must be" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            side_effect=[
+                [{"name": "foo"}],  # prepareCallHierarchy response
+                [{"from": {"name": "bar"}}],  # incomingCalls response
+            ]
+        )
+
+        res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx)
+        assert "bar" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_no_calls():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            side_effect=[
+                [{"name": "foo"}],  # prepareCallHierarchy response
+                None,  # incomingCalls response (no calls)
+            ]
+        )
+
+        res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx)
+        assert "No incoming calls found" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_no_items():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value=None)
+
+        res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx)
+        assert "No call hierarchy items found" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_type_definition_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
+
+        res = await lsp_type_definition("/path/to/file.py", 1, 0, ctx)
+        assert "/path" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_type_definition_list_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            return_value=[
+                {"uri": "file:///path1", "range": {}},
+                {"uri": "file:///path2", "range": {}},
+            ]
+        )
+
+        res = await lsp_type_definition("/path/to/file.py", 1, 0, ctx)
+        assert "/path1" in res
+        assert "/path2" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_implementation_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
+
+        res = await lsp_implementation("/path/to/file.py", 1, 0, ctx)
+        assert "/path" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_implementation_list_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path1", "range": {}}])
+
+        res = await lsp_implementation("/path/to/file.py", 1, 0, ctx)
+        assert "/path1" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_document_highlight_success():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value=[{"range": {}}])
+
+        res = await lsp_document_highlight("/path/to/file.py", 1, 0, ctx)
+        assert "range" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_type_definition_string_fallback():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value="some string")
+        res = await lsp_type_definition("/path/to/file.py", 1, 0, ctx)
+        assert res == "some string"
+
+
+@pytest.mark.asyncio
+async def test_lsp_implementation_string_fallback():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value="some string")
+        res = await lsp_implementation("/path/to/file.py", 1, 0, ctx)
+        assert res == "some string"
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_invalid_line_char():
+    ctx = MagicMock()
+    with patch("pathlib.Path.exists", return_value=True):
+        res = await lsp_call_hierarchy("/path/to/file.py", 0, 0, "incoming", ctx)
+        assert "line must be >= 1" in res

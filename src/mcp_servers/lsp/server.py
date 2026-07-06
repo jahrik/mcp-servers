@@ -293,6 +293,160 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
         return f"Error querying LSP diagnostics: {e}"
 
 
+@mcp.tool()
+async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context) -> str:
+    """Get the type definition location for the symbol at the given position.
+
+    Args:
+        filepath: Absolute or workspace-relative path to the file.
+        line: 1-indexed line number.
+        char: 0-indexed character position.
+    """
+    filepath_obj = _prepare_file(filepath)
+    if isinstance(filepath_obj, str):
+        return filepath_obj
+
+    if line < 1 or char < 0:
+        return "Error: line must be >= 1 and char must be >= 0"
+
+    try:
+        uri = await _sync_file_with_lsp(filepath_obj)
+        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+        response = await lsp_client.send_request("textDocument/typeDefinition", params)
+        if not response:
+            return "No type definition found at this position."
+
+        if isinstance(response, dict):
+            return _format_location(response)
+        elif isinstance(response, list):
+            return "\n".join(_format_location(loc) for loc in response)
+
+        return str(response)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return f"Error querying LSP: {e}"
+
+
+@mcp.tool()
+async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) -> str:
+    """Get the implementation location(s) for the symbol at the given position.
+
+    Args:
+        filepath: Absolute or workspace-relative path to the file.
+        line: 1-indexed line number.
+        char: 0-indexed character position.
+    """
+    filepath_obj = _prepare_file(filepath)
+    if isinstance(filepath_obj, str):
+        return filepath_obj
+
+    if line < 1 or char < 0:
+        return "Error: line must be >= 1 and char must be >= 0"
+
+    try:
+        uri = await _sync_file_with_lsp(filepath_obj)
+        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+        response = await lsp_client.send_request("textDocument/implementation", params)
+        if not response:
+            return "No implementation found at this position."
+
+        if isinstance(response, dict):
+            return _format_location(response)
+        elif isinstance(response, list):
+            return "\n".join(_format_location(loc) for loc in response)
+
+        return str(response)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return f"Error querying LSP: {e}"
+
+
+@mcp.tool()
+async def lsp_document_highlight(filepath: str, line: int, char: int, ctx: Context) -> str:
+    """Get document highlights for the symbol at the given position (e.g. all read/write occurrences).
+
+    Args:
+        filepath: Absolute or workspace-relative path to the file.
+        line: 1-indexed line number.
+        char: 0-indexed character position.
+    """
+    filepath_obj = _prepare_file(filepath)
+    if isinstance(filepath_obj, str):
+        return filepath_obj
+
+    if line < 1 or char < 0:
+        return "Error: line must be >= 1 and char must be >= 0"
+
+    try:
+        uri = await _sync_file_with_lsp(filepath_obj)
+        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+        response = await lsp_client.send_request("textDocument/documentHighlight", params)
+        if not response:
+            return "No highlights found at this position."
+
+        import json
+
+        return json.dumps(response, indent=2)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return f"Error querying LSP: {e}"
+
+
+@mcp.tool()
+async def lsp_call_hierarchy(
+    filepath: str, line: int, char: int, direction: str, ctx: Context
+) -> str:
+    """Get the call hierarchy (incoming or outgoing calls) for the symbol at the given position.
+
+    Args:
+        filepath: Absolute or workspace-relative path to the file.
+        line: 1-indexed line number.
+        char: 0-indexed character position.
+        direction: "incoming" or "outgoing"
+    """
+    if direction not in ("incoming", "outgoing"):
+        return "Error: direction must be 'incoming' or 'outgoing'"
+
+    filepath_obj = _prepare_file(filepath)
+    if isinstance(filepath_obj, str):
+        return filepath_obj
+
+    if line < 1 or char < 0:
+        return "Error: line must be >= 1 and char must be >= 0"
+
+    try:
+        uri = await _sync_file_with_lsp(filepath_obj)
+        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+        # 1. Prepare call hierarchy
+        items = await lsp_client.send_request("textDocument/prepareCallHierarchy", params)
+        if not items:
+            return "No call hierarchy items found at this position."
+
+        # 2. Get incoming or outgoing calls for the first item
+        item = items[0]
+        call_params = {"item": item}
+        method = (
+            "callHierarchy/incomingCalls"
+            if direction == "incoming"
+            else "callHierarchy/outgoingCalls"
+        )
+        calls = await lsp_client.send_request(method, call_params)
+
+        if not calls:
+            return f"No {direction} calls found."
+
+        import json
+
+        return json.dumps(calls, indent=2)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return f"Error querying LSP: {e}"
+
+
 def main() -> None:
     """Run the lsp MCP server."""
     mcp.run()
