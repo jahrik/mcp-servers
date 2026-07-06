@@ -20,7 +20,10 @@ mcp = FastMCP("dispatcher")
 
 
 def get_db_path() -> Path:
-    path_str = os.environ.get("MCP_DISPATCHER_DB_PATH", "~/.config/agents/dispatcher.db")
+    # Default to ~/.mcp (alongside the github server's audit.db) rather than the
+    # agent-config git clone at ~/.config/agents, where a runtime DB risks being
+    # committed or clobbered on re-clone.
+    path_str = os.environ.get("MCP_DISPATCHER_DB_PATH", "~/.mcp/dispatcher.db")
     return Path(path_str).expanduser()
 
 

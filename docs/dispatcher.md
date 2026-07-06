@@ -26,7 +26,7 @@ Returns a JSON object with the job's `id`, `status` (`Running`, `Failed`, etc.),
 ## Configuration
 
 - `MCP_DISPATCHER_ALLOW_SPAWN` (Required): Must be set to `"true"` or `"1"` to allow `submit_job` to spawn background processes. If unset or false, `submit_job` will raise a runtime error. This serves as a safety guard against accidental subagent spawning.
-- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.config/agents/dispatcher.db`).
+- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.mcp/dispatcher.db`, alongside the github server's `audit.db`).
 
 ## Usage patterns
 

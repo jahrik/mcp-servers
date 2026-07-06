@@ -48,7 +48,7 @@ Asynchronous agent-to-agent task delegation and orchestration. Exposes `submit_j
 
 **Configuration:**
 - `MCP_DISPATCHER_ALLOW_SPAWN` (Required): Must be set to `"true"` or `"1"` to allow `submit_job` to spawn background processes.
-- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.config/agents/dispatcher.db`).
+- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.mcp/dispatcher.db`).
 
 ## Install
 
