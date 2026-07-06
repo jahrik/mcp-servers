@@ -14,6 +14,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     # duckdb's Python API needs pytz to return TIMESTAMPTZ values
     "pytz>=2024.1",
+    "pydantic>=2.7.0",
 ]
 
 [project.scripts]
@@ -22,6 +23,7 @@ dependencies = [
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"
 mcp-data = "mcp_servers.data.server:main"
+mcp-dispatcher = "mcp_servers.dispatcher.server:main"
 
 [dependency-groups]
 dev = [

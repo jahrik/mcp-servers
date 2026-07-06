@@ -10,11 +10,12 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 
 ## Servers
 
-| Server      | Script          | What it does                                                    |
-| ----------- | --------------- | --------------------------------------------------------------- |
-| `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
-| `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
-| `data`      | `mcp-data`      | SQL over large local files + scratch tables across calls (DuckDB engine) |
+| Server       | Script           | What it does                                                             |
+| ------------ | ---------------- | ------------------------------------------------------------------------ |
+| `github`     | `mcp-github`     | GitHub access (PRs, issues, files, code search, review threads)          |
+| `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
+| `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
+| `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
 
 ### `github`
 
@@ -40,6 +41,14 @@ hatch and working memory outside the context window. DuckDB is the engine, so th
 the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query idioms apply).
 
 [Read the detailed `data` server documentation](docs/data.md).
+
+### `dispatcher`
+
+Asynchronous agent-to-agent task delegation and orchestration. Exposes `submit_job` and `get_job_status` tools to allow agents to spawn and monitor background subagents for long-running workflows.
+
+**Configuration:**
+- `MCP_DISPATCHER_ALLOW_SPAWN` (Required): Must be set to `"true"` or `"1"` to allow `submit_job` to spawn background processes.
+- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.config/agents/dispatcher.db`).
 
 ## Install
 
