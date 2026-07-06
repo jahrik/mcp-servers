@@ -114,6 +114,24 @@ async def test_gh_issue_edit_metadata(httpx_mock, monkeypatch):
     assert sent == {"title": "new title", "body": "new body", "labels": ["bug"]}
 
 
+def test_issue_edit_args_requires_a_field():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="at least one field"):
+        IssueEditArgs(repo="octocat/repo", number=1)
+
+
+def test_issue_edit_args_rejects_mismatched_state_reason():
+    from pydantic import ValidationError
+
+    # completed pairs with closed, not open
+    with pytest.raises(ValidationError, match="requires state='closed'"):
+        IssueEditArgs(repo="octocat/repo", number=1, state="open", state_reason="completed")
+    # state_reason with no state at all is also a mismatch
+    with pytest.raises(ValidationError, match="requires state='open'"):
+        IssueEditArgs(repo="octocat/repo", number=1, state_reason="reopened")
+
+
 @pytest.mark.asyncio
 async def test_gh_issue_get_empty_author(httpx_mock):
     httpx_mock.add_response(

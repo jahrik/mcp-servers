@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _REPO_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
 
@@ -121,6 +121,26 @@ class IssueEditArgs(BaseModel, frozen=True):
     labels: list[str] | None = Field(
         None, description="Replace the issue's labels with this set (omit to leave unchanged)."
     )
+
+    @model_validator(mode="after")
+    def _check_fields(self) -> IssueEditArgs:
+        if all(
+            v is None for v in (self.state, self.state_reason, self.title, self.body, self.labels)
+        ):
+            raise ValueError(
+                "Provide at least one field to edit (state, state_reason, title, body, or labels)."
+            )
+        if self.state_reason is not None:
+            required_state = {
+                "completed": "closed",
+                "not_planned": "closed",
+                "reopened": "open",
+            }[self.state_reason]
+            if self.state != required_state:
+                raise ValueError(
+                    f"state_reason={self.state_reason!r} requires state={required_state!r}."
+                )
+        return self
 
 
 class FileGetArgs(BaseModel, frozen=True):
