@@ -48,10 +48,7 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     """
     # Ensure the path is within the allowed workspace
     p = Path(filepath)
-    if not p.is_absolute():
-        filepath_obj = (Path(WORKSPACE_ROOT) / p).resolve()
-    else:
-        filepath_obj = p.resolve()
+    filepath_obj = (Path(WORKSPACE_ROOT) / p).resolve() if not p.is_absolute() else p.resolve()
     root_obj = Path(WORKSPACE_ROOT).resolve()
     try:
         filepath_obj.relative_to(root_obj)
