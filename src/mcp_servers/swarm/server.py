@@ -6,6 +6,7 @@ Manages job state in an SQLite database and asynchronously spawns subagents to h
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import uuid
@@ -55,10 +56,15 @@ def submit_job(worker_type: str, payload: str) -> str:
         )
         conn.commit()
 
+    env = os.environ.copy()
+    env["AGY_JOB_ID"] = job_id
+    env["AGY_WORKER_TYPE"] = worker_type
+
     # Asynchronously spawn the worker
     subprocess.Popen(
-        ["agy", "run", payload],
+        ["agy", "-p", "--", payload],
         start_new_session=True,
+        env=env,
     )
 
     return job_id
