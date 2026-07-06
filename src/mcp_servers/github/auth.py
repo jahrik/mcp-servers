@@ -19,7 +19,7 @@ def get_jwt() -> str:
         private_key = private_key.replace("\\n", "\n")
 
     now = int(time.time())
-    payload = {
+    payload: dict[str, int | str] = {
         "iat": now - 60,
         "exp": now + 600,
         "iss": app_id,
