@@ -46,6 +46,10 @@ the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query
 
 Asynchronous agent-to-agent task delegation and orchestration. Exposes `submit_job` and `get_job_status` tools to allow agents to spawn and monitor background subagents for long-running workflows.
 
+**Configuration:**
+- `MCP_DISPATCHER_ALLOW_SPAWN=true` (Required): Must be set to allow `submit_job` to spawn background processes.
+- `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.config/agents/dispatcher.db`).
+
 ## Install
 
 ```bash
