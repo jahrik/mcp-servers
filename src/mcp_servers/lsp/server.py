@@ -85,7 +85,7 @@ def _format_location(loc: dict) -> str:
     uri = loc.get("uri") or loc.get("targetUri", "")
     if uri.startswith("file://"):
         uri = uri[7:]
-    
+
     range_dict = loc.get("range") or loc.get("targetSelectionRange") or loc.get("targetRange")
     if range_dict:
         start = range_dict.get("start", {})
@@ -163,7 +163,7 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
             return _format_location(response)
         elif isinstance(response, list):
             return "\n".join(_format_location(loc) for loc in response)
-        
+
         return str(response)
     except asyncio.CancelledError:
         raise
@@ -200,7 +200,7 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
 
         if isinstance(response, list):
             return "\n".join(_format_location(loc) for loc in response)
-        
+
         return str(response)
     except asyncio.CancelledError:
         raise

@@ -227,24 +227,33 @@ async def test_lsp_document_symbols_success():
         res = await lsp_document_symbols("/path/to/file.py", ctx)
         assert "foo" in res
 
+
 def test_format_location():
     from mcp_servers.lsp.server import _format_location
-    
+
     # Test LocationLink
-    assert _format_location({
-        "targetUri": "file:///path/link",
-        "targetSelectionRange": {"start": {"line": 1, "character": 5}}
-    }) == "/path/link:2:5"
-    
+    assert (
+        _format_location(
+            {
+                "targetUri": "file:///path/link",
+                "targetSelectionRange": {"start": {"line": 1, "character": 5}},
+            }
+        )
+        == "/path/link:2:5"
+    )
+
     # Test Location with no file://
-    assert _format_location({
-        "uri": "/path/no-scheme",
-        "range": {"start": {"line": 2, "character": 0}}
-    }) == "/path/no-scheme:3:0"
-    
+    assert (
+        _format_location(
+            {"uri": "/path/no-scheme", "range": {"start": {"line": 2, "character": 0}}}
+        )
+        == "/path/no-scheme:3:0"
+    )
+
     # Test single dictionary return from definition
     import asyncio
-    from unittest.mock import MagicMock, AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from mcp_servers.lsp.server import lsp_definition
 
     async def _test():
@@ -258,11 +267,14 @@ def test_format_location():
             mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
             res = await lsp_definition("/path/to/file.py", 1, 0, ctx)
             assert "/path" in res
+
     asyncio.run(_test())
+
 
 def test_lsp_definition_string_fallback():
     import asyncio
-    from unittest.mock import MagicMock, AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from mcp_servers.lsp.server import lsp_definition
 
     async def _test():
@@ -276,11 +288,14 @@ def test_lsp_definition_string_fallback():
             mock_client.send_request = AsyncMock(return_value="some string")
             res = await lsp_definition("/path/to/file.py", 1, 0, ctx)
             assert res == "some string"
+
     asyncio.run(_test())
+
 
 def test_lsp_references_string_fallback():
     import asyncio
-    from unittest.mock import MagicMock, AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from mcp_servers.lsp.server import lsp_references
 
     async def _test():
@@ -294,6 +309,7 @@ def test_lsp_references_string_fallback():
             mock_client.send_request = AsyncMock(return_value="some string")
             res = await lsp_references("/path/to/file.py", 1, 0, ctx)
             assert res == "some string"
+
     asyncio.run(_test())
 
 
