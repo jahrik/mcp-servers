@@ -2,8 +2,13 @@ import json
 
 import pytest
 
-from mcp_servers.github.models.schemas import RunArgs, RunListArgs
-from mcp_servers.github.tools.actions import gh_run_failed_logs, gh_run_get, gh_run_list
+from mcp_servers.github.models.schemas import RunArgs, RunListArgs, RunRerunArgs
+from mcp_servers.github.tools.actions import (
+    gh_run_failed_logs,
+    gh_run_get,
+    gh_run_list,
+    gh_run_rerun,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -109,3 +114,27 @@ async def test_gh_run_failed_logs_non404_error_propagates(httpx_mock):
     with pytest.raises(GhError) as exc_info:
         await gh_run_failed_logs(RunArgs(repo="octocat/repo", run_id=1))
     assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_gh_run_rerun(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/rerun",
+        status_code=201,
+    )
+    res = await gh_run_rerun(RunRerunArgs(repo="octocat/repo", run_id=1))
+    assert "triggered" in res
+
+
+@pytest.mark.asyncio
+async def test_gh_run_rerun_failed_only(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/rerun-failed-jobs",
+        status_code=201,
+    )
+    res = await gh_run_rerun(RunRerunArgs(repo="octocat/repo", run_id=1, failed_only=True))
+    assert "triggered" in res

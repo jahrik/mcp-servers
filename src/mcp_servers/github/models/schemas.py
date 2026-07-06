@@ -156,6 +156,12 @@ class RunArgs(BaseModel, frozen=True):
     run_id: int = Field(description="The run ID (databaseId).")
 
 
+class RunRerunArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    run_id: int = Field(description="The run ID (databaseId).")
+    failed_only: bool = Field(False, description="If true, only rerun failed jobs.")
+
+
 class ReviewCommentsListArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     pr: int = Field(description="Pull request number.")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .actions import gh_run_failed_logs, gh_run_get, gh_run_list
+from .actions import gh_run_failed_logs, gh_run_get, gh_run_list, gh_run_rerun
 from .api import (
     gh_api_get,
     gh_api_graphql,
@@ -55,6 +55,7 @@ __all__ = [
     "gh_run_failed_logs",
     "gh_run_get",
     "gh_run_list",
+    "gh_run_rerun",
     "gh_search_code",
     "gh_search_issues",
     "gh_search_prs",

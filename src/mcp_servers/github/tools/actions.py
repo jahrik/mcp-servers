@@ -4,7 +4,8 @@ import json
 
 from mcp_servers.github.client import GhError, gh_request, validate_ref, validate_repo
 
-from ..models.schemas import RunArgs, RunListArgs
+from ..models.schemas import RunArgs, RunListArgs, RunRerunArgs
+from ..utils import _audit_log
 
 
 async def gh_run_list(args: RunListArgs) -> str:
@@ -102,3 +103,20 @@ async def gh_run_failed_logs(args: RunArgs) -> str:
     if not logs:
         return "No failed jobs found or logs unavailable."
     return "\n\n".join(logs)
+
+
+@_audit_log
+async def gh_run_rerun(args: RunRerunArgs) -> str:
+    """Rerun a GitHub Actions workflow run (or only its failed jobs)."""
+    repo = args.repo
+    run_id = args.run_id
+    failed_only = args.failed_only
+    validate_repo(repo)
+
+    if failed_only:
+        endpoint = f"repos/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
+    else:
+        endpoint = f"repos/{repo}/actions/runs/{run_id}/rerun"
+
+    await gh_request("POST", endpoint)
+    return "Rerun triggered successfully."
