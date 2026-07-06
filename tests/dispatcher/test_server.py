@@ -387,13 +387,16 @@ def test_reap_children_drops_finished(monkeypatch: pytest.MonkeyPatch) -> None:
         if calls == 0:
             calls += 1
             return 1234, 0  # Reaped one process
-        raise ChildProcessError()  # No more children
+        if calls == 1:
+            calls += 1
+            return 0, 0  # No more exited children (covers the `if pid == 0: break` branch)
+        raise ChildProcessError()
 
     monkeypatch.setattr(os, "waitpid", mock_waitpid)
 
-    # Should consume the one child and then handle the ChildProcessError gracefully.
+    # Should consume the one child and then break when pid == 0.
     jobs._reap_children()
-    assert calls == 1
+    assert calls == 2
 
 
 @pytest.mark.parametrize("raw", ["not-an-int", "0", "-3"])
