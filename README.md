@@ -59,6 +59,8 @@ Asynchronous agent-to-agent task delegation and orchestration. Lets agents spawn
 - `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.mcp/dispatcher.db`).
 - `MCP_DISPATCHER_MAX_RUNNING`: Max concurrently-`Running` jobs before `submit_job` is refused (default `16`).
 
+[Read the detailed `dispatcher` server documentation](docs/dispatcher.md).
+
 ### `lsp`
 
 Language Server Protocol (LSP) proxy. Lets agents query a language server (e.g. `pyright`) for type signatures and documentation without managing the LSP lifecycle themselves.

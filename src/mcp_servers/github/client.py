@@ -133,7 +133,8 @@ async def gh_request_paginated(
                 f"got {type(page).__name__}. Use gh_request for non-paginated endpoints."
             )
         results.extend(page)
-        url = resp.links.get("next", {}).get("url")
+        next_link = resp.links.get("next")
+        url = next_link.get("url") if next_link else None
 
     return results[:max_items]
 
