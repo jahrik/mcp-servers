@@ -434,22 +434,26 @@ async def lsp_call_hierarchy(
         if not items:
             return "No call hierarchy items found at this position."
 
-        # 2. Get incoming or outgoing calls for the first item
-        item = items[0]
-        call_params = {"item": item}
+        # 2. Get incoming or outgoing calls for all items
         method = (
             "callHierarchy/incomingCalls"
             if direction == "incoming"
             else "callHierarchy/outgoingCalls"
         )
-        calls = await lsp_client.send_request(language_id, method, call_params)
 
-        if not calls:
+        all_calls = []
+        for item in items:
+            call_params = {"item": item}
+            calls = await lsp_client.send_request(language_id, method, call_params)
+            if calls:
+                all_calls.extend(calls)
+
+        if not all_calls:
             return f"No {direction} calls found."
 
         import json
 
-        return json.dumps(calls, indent=2)
+        return json.dumps(all_calls, indent=2)
     except asyncio.CancelledError:
         raise
     except Exception as e:
