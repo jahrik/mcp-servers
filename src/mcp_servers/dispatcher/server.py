@@ -44,10 +44,14 @@ def _init_db() -> None:
 @mcp.tool()
 def submit_job(args: SubmitJobArgs) -> str:
     """Submits a new job to the dispatcher."""
-    if os.environ.get("MCP_DISPATCHER_ALLOW_SPAWN") != "true":
+    allow_spawn = os.environ.get("MCP_DISPATCHER_ALLOW_SPAWN", "").lower()
+    if allow_spawn not in ("1", "true"):
         raise RuntimeError("Spawning is not allowed")
 
-    payload_str = json.dumps(args.payload)
+    try:
+        payload_str = json.dumps(args.payload)
+    except TypeError as e:
+        raise ValueError("Payload must be JSON-serializable") from e
 
     _init_db()
     job_id = str(uuid.uuid4())
@@ -100,7 +104,10 @@ def get_job_status(args: GetJobStatusArgs) -> str:
         return json.dumps({"error": f"Job {args.job_id} not found."})
 
     job_data = dict(row)
-    job_data["payload"] = json.loads(job_data["payload"])
+    try:
+        job_data["payload"] = json.loads(job_data["payload"])
+    except json.JSONDecodeError:
+        job_data["payload"] = {"error": "Invalid JSON in database"}
     return json.dumps(job_data)
 
 
