@@ -22,6 +22,7 @@ dependencies = [
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"
 mcp-data = "mcp_servers.data.server:main"
+mcp-swarm = "mcp_servers.swarm.server:main"
 
 [dependency-groups]
 dev = [
