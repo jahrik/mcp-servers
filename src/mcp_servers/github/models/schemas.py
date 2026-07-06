@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _REPO_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
 
@@ -104,6 +104,43 @@ class IssueCommentArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     issue: int = Field(description="Issue number.")
     body: str = Field(description="The comment body.")
+
+
+class IssueEditArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    number: int = Field(description="Issue number.")
+    state: typing.Literal["open", "closed"] | None = Field(
+        None, description="``open`` to reopen, ``closed`` to close."
+    )
+    state_reason: typing.Literal["completed", "not_planned", "reopened"] | None = Field(
+        None,
+        description="Reason for the state change: ``completed``, ``not_planned``, or ``reopened``.",
+    )
+    title: str | None = Field(None, description="Optional new title for the issue.")
+    body: str | None = Field(None, description="Optional new body for the issue.")
+    labels: list[str] | None = Field(
+        None, description="Replace the issue's labels with this set (omit to leave unchanged)."
+    )
+
+    @model_validator(mode="after")
+    def _check_fields(self) -> IssueEditArgs:
+        if all(
+            v is None for v in (self.state, self.state_reason, self.title, self.body, self.labels)
+        ):
+            raise ValueError(
+                "Provide at least one field to edit (state, state_reason, title, body, or labels)."
+            )
+        if self.state_reason is not None:
+            required_state = {
+                "completed": "closed",
+                "not_planned": "closed",
+                "reopened": "open",
+            }[self.state_reason]
+            if self.state != required_state:
+                raise ValueError(
+                    f"state_reason={self.state_reason!r} requires state={required_state!r}."
+                )
+        return self
 
 
 class FileGetArgs(BaseModel, frozen=True):

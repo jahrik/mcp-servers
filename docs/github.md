@@ -83,10 +83,12 @@ form before signing the JWT. Either way, treat it like any other credential: pul
 secrets manager or `.env` file that's gitignored, never commit it, never hardcode it.
 
 If you're wiring this up through
-[`ansible-ai-agents`](https://github.com/jahrik/ansible-ai-agents): as of this writing that role
-only registers the `github` server via `ai_agents_mcp_servers` and doesn't manage these three
-credentials for you (it still assumes the old `gh auth login` model) — set the env vars yourself
-in the meantime, per that role's docs, until credential management lands there.
+[`ansible-ai-agents`](https://github.com/jahrik/ansible-ai-agents): that role registers the
+`github` (plus `ws` and `data`) servers and wires these credentials into the `github` server's
+environment for you. Set `ai_agents_mcp_github_app_id`, `ai_agents_mcp_github_app_installation_id`,
+and `ai_agents_mcp_github_app_private_key_file` (a path to the PEM on the target host); when all
+three are present the role exports `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` /
+`GITHUB_APP_PRIVATE_KEY` to the server. See that role's docs for supplying the PEM secret.
 
 ### 5. Verify it works
 
@@ -136,17 +138,18 @@ The review-read tools take `bot_only` to keep just the Copilot/bot comments — 
 
 ## Write Tools
 
-- `gh_pr_create`
+- `gh_pr_create` — when `base` is omitted it defaults to the repo's default branch (rather than 422ing); a genuine 422 surfaces the API's `errors` array.
 - `gh_pr_edit`
 - `gh_pr_comment`
 - `gh_pr_merge`
-- `gh_pr_request_reviewers`
+- `gh_pr_request_reviewers` — to request a Copilot review, pass the login `Copilot` (not the `copilot-pull-request-reviewer[bot]` app slug). GitHub silently ignores an unrecognized reviewer login, so the tool adds a `warning` naming anyone it dropped.
 - `gh_issue_create`
 - `gh_issue_comment`
+- `gh_issue_edit` — change state (close/reopen via `state` + `state_reason`), title, body, or labels.
 - `gh_review_comment_reply`
 - `gh_review_thread_resolve`
 
-Every write tool invocation is recorded for accountability in a local SQLite audit log at `~/.mcp/audit.db`.
+Every write tool invocation is recorded for accountability in a local SQLite audit log at `~/.mcp/audit.db`. Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
 
 ## Features
 

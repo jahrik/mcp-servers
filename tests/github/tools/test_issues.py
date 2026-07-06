@@ -6,11 +6,13 @@ from mcp_servers.github.models.schemas import (
     IssueArgs,
     IssueCommentArgs,
     IssueCreateArgs,
+    IssueEditArgs,
     IssueListArgs,
 )
 from mcp_servers.github.tools.issues import (
     gh_issue_comment,
     gh_issue_create,
+    gh_issue_edit,
     gh_issue_get,
     gh_issue_list,
 )
@@ -76,6 +78,58 @@ async def test_gh_issue_comment(httpx_mock, monkeypatch):
     )
     res = await gh_issue_comment(IssueCommentArgs(repo="octocat/repo", issue=1, body="comment"))
     assert json.loads(res)["id"] == 3
+
+
+@pytest.mark.asyncio
+async def test_gh_issue_edit_close(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="PATCH",
+        url="https://api.github.com/repos/octocat/repo/issues/1",
+        json={"number": 1, "state": "closed"},
+    )
+    res = await gh_issue_edit(
+        IssueEditArgs(repo="octocat/repo", number=1, state="closed", state_reason="completed")
+    )
+    assert json.loads(res)["state"] == "closed"
+    sent = json.loads(httpx_mock.get_requests(method="PATCH")[0].content)
+    assert sent == {"state": "closed", "state_reason": "completed"}
+
+
+@pytest.mark.asyncio
+async def test_gh_issue_edit_metadata(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="PATCH",
+        url="https://api.github.com/repos/octocat/repo/issues/2",
+        json={"number": 2},
+    )
+    res = await gh_issue_edit(
+        IssueEditArgs(
+            repo="octocat/repo", number=2, title="new title", body="new body", labels=["bug"]
+        )
+    )
+    assert json.loads(res)["number"] == 2
+    sent = json.loads(httpx_mock.get_requests(method="PATCH")[0].content)
+    assert sent == {"title": "new title", "body": "new body", "labels": ["bug"]}
+
+
+def test_issue_edit_args_requires_a_field():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="at least one field"):
+        IssueEditArgs(repo="octocat/repo", number=1)
+
+
+def test_issue_edit_args_rejects_mismatched_state_reason():
+    from pydantic import ValidationError
+
+    # completed pairs with closed, not open
+    with pytest.raises(ValidationError, match="requires state='closed'"):
+        IssueEditArgs(repo="octocat/repo", number=1, state="open", state_reason="completed")
+    # state_reason with no state at all is also a mismatch
+    with pytest.raises(ValidationError, match="requires state='open'"):
+        IssueEditArgs(repo="octocat/repo", number=1, state_reason="reopened")
 
 
 @pytest.mark.asyncio

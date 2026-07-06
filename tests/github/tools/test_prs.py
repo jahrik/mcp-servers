@@ -122,6 +122,55 @@ async def test_gh_pr_create(httpx_mock, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gh_pr_create_defaults_base_to_default_branch(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo", json={"default_branch": "develop"}
+    )
+    httpx_mock.add_response(
+        method="POST", url="https://api.github.com/repos/octocat/repo/pulls", json={"number": 7}
+    )
+    res = await gh_pr_create(PrCreateArgs(repo="octocat/repo", title="t", body="b", head="feature"))
+    assert json.loads(res)["number"] == 7
+    create_req = httpx_mock.get_requests(method="POST")[0]
+    assert json.loads(create_req.content)["base"] == "develop"
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_create_surfaces_422_errors(httpx_mock, monkeypatch):
+    from mcp_servers.github.client import GhError
+
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/pulls",
+        status_code=422,
+        json={"message": "Validation Failed", "errors": [{"field": "head", "code": "invalid"}]},
+    )
+    with pytest.raises(GhError, match="invalid"):
+        await gh_pr_create(
+            PrCreateArgs(repo="octocat/repo", title="t", body="b", head="nope", base="main")
+        )
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_create_reraises_non_validation_error(httpx_mock, monkeypatch):
+    from mcp_servers.github.client import GhError
+
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/pulls",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    with pytest.raises(GhError, match="404"):
+        await gh_pr_create(
+            PrCreateArgs(repo="octocat/repo", title="t", body="b", head="feature", base="main")
+        )
+
+
+@pytest.mark.asyncio
 async def test_gh_pr_edit(httpx_mock, monkeypatch):
     monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     httpx_mock.add_response(
@@ -239,6 +288,29 @@ async def test_gh_pr_request_reviewers_team(httpx_mock, monkeypatch):
     )
     data = json.loads(res)
     assert data["requested_teams"][0]["slug"] == "justice-league"
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_warns_on_silent_drop(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    # GitHub returns 200 but omits the unrecognized reviewer from requested_reviewers.
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        json={"requested_reviewers": [{"login": "user1"}], "requested_teams": []},
+    )
+    res = await gh_pr_request_reviewers(
+        PrRequestReviewersArgs(
+            repo="octocat/repo",
+            pr=1,
+            reviewers=["user1", "copilot-pull-request-reviewer[bot]"],
+            team_reviewers=["ghost-team"],
+        )
+    )
+    data = json.loads(res)
+    assert "warning" in data
+    assert "copilot-pull-request-reviewer[bot]" in data["warning"]
+    assert "ghost-team" in data["warning"]
+    assert "user1" not in data["warning"]
 
 
 @pytest.mark.asyncio
