@@ -11,6 +11,7 @@ from mcp_servers.dispatcher import server
 from mcp_servers.dispatcher.models.schemas import (
     GetJobStatusArgs,
     JobStatus,
+    ListJobsArgs,
     SubmitJobArgs,
     UpdateJobStatusArgs,
 )
@@ -264,3 +265,54 @@ def test_connections_are_closed(
     for conn in opened:
         with pytest.raises(sqlite3.ProgrammingError):
             conn.execute("SELECT 1")
+
+
+def test_list_jobs_newest_first(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+
+    job_id1 = jobs.submit_job(SubmitJobArgs(worker_type="worker1", payload={}))
+    time.sleep(0.01)
+    job_id2 = jobs.submit_job(SubmitJobArgs(worker_type="worker2", payload={}))
+
+    res = json.loads(jobs.list_jobs(ListJobsArgs()))
+
+    assert len(res) == 2
+    assert res[0]["id"] == job_id2
+    assert res[1]["id"] == job_id1
+    assert "payload" not in res[0]
+    assert res[0]["worker_type"] == "worker2"
+    assert res[1]["worker_type"] == "worker1"
+
+
+def test_list_jobs_status_filter(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+
+    job_id1 = jobs.submit_job(SubmitJobArgs(worker_type="worker1", payload={}))
+    job_id2 = jobs.submit_job(SubmitJobArgs(worker_type="worker2", payload={}))
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id1, status=JobStatus.COMPLETED))
+
+    res = json.loads(jobs.list_jobs(ListJobsArgs(status=JobStatus.COMPLETED)))
+    assert len(res) == 1
+    assert res[0]["id"] == job_id1
+
+    res = json.loads(jobs.list_jobs(ListJobsArgs(status=JobStatus.RUNNING)))
+    assert len(res) == 1
+    assert res[0]["id"] == job_id2
+
+
+def test_list_jobs_limit(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+
+    for i in range(5):
+        jobs.submit_job(SubmitJobArgs(worker_type=f"worker{i}", payload={}))
+
+    res = json.loads(jobs.list_jobs(ListJobsArgs(limit=3)))
+    assert len(res) == 3

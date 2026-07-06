@@ -9,7 +9,13 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..models.schemas import GetJobStatusArgs, JobStatus, SubmitJobArgs, UpdateJobStatusArgs
+from ..models.schemas import (
+    GetJobStatusArgs,
+    JobStatus,
+    ListJobsArgs,
+    SubmitJobArgs,
+    UpdateJobStatusArgs,
+)
 
 # Cap the serialized payload so a single job can't bloat the row / DB unboundedly.
 # Job payloads are task specs, not bulk data; 1 MiB is generous headroom.
@@ -177,3 +183,25 @@ def update_job_status(args: UpdateJobStatusArgs) -> str:
 
     job_data = _fetch_job(db_path, args.job_id)
     return json.dumps(job_data)
+
+
+def list_jobs(args: ListJobsArgs) -> str:
+    """Lists jobs, ordered by created_at DESC."""
+    _init_db()
+    db_path = get_db_path()
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+
+        query = "SELECT id, status, worker_type, created_at, updated_at FROM jobs"
+        params: list[object] = []
+        if args.status is not None:
+            query += " WHERE status = ?"
+            params.append(args.status.value)
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(args.limit)
+
+        cursor = conn.execute(query, tuple(params))
+        rows = cursor.fetchall()
+
+    return json.dumps([dict(row) for row in rows])
