@@ -80,6 +80,21 @@ async def _sync_file_with_lsp(filepath_obj: Path) -> str:
     return uri
 
 
+def _format_location(loc: dict) -> str:
+    """Format an LSP Location or LocationLink into a readable string."""
+    uri = loc.get("uri") or loc.get("targetUri", "")
+    if uri.startswith("file://"):
+        uri = uri[7:]
+    
+    range_dict = loc.get("range") or loc.get("targetSelectionRange") or loc.get("targetRange")
+    if range_dict:
+        start = range_dict.get("start", {})
+        line = start.get("line", 0) + 1
+        char = start.get("character", 0)
+        return f"{uri}:{line}:{char}"
+    return uri
+
+
 @mcp.tool()
 async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     """Get the type signature and docstring for the symbol at the given position.
@@ -144,9 +159,12 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
             return "No definition found at this position."
 
         # Format response (could be list of locations or single location)
-        import json
-
-        return json.dumps(response, indent=2)
+        if isinstance(response, dict):
+            return _format_location(response)
+        elif isinstance(response, list):
+            return "\n".join(_format_location(loc) for loc in response)
+        
+        return str(response)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -180,9 +198,10 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
         if not response:
             return "No references found at this position."
 
-        import json
-
-        return json.dumps(response, indent=2)
+        if isinstance(response, list):
+            return "\n".join(_format_location(loc) for loc in response)
+        
+        return str(response)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -253,15 +272,17 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
         uri = await _sync_file_with_lsp(filepath_obj)
         # We need to give the LSP a moment to process and publish diagnostics.
         # Poll briefly, up to 0.5s.
-        diagnostics = []
+        diagnostics = None
         for _ in range(5):
             diagnostics = lsp_client.get_diagnostics(uri)
-            if diagnostics:
+            if diagnostics is not None:
                 break
             await asyncio.sleep(0.1)
 
+        if diagnostics is None:
+            return "No diagnostics found for this file (the LSP hasn't finished analyzing it yet)."
         if not diagnostics:
-            return "No diagnostics found for this file (it may be error-free, or the LSP hasn't finished analyzing it yet)."
+            return "No diagnostics found for this file (it is error-free)."
 
         import json
 

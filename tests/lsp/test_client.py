@@ -274,7 +274,7 @@ async def test_handle_payload_publish_diagnostics():
         }
     )
     assert client.get_diagnostics("file:///tmp/foo.py") == [{"message": "error1"}]
-    assert client.get_diagnostics("file:///tmp/other.py") == []
+    assert client.get_diagnostics("file:///tmp/other.py") is None
 
 
 @pytest.mark.asyncio

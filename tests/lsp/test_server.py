@@ -195,7 +195,7 @@ async def test_lsp_definition_success():
         mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path", "range": {}}])
 
         res = await lsp_definition("/path/to/file.py", 1, 0, ctx)
-        assert "file:///path" in res
+        assert "/path" in res
 
 
 @pytest.mark.asyncio
@@ -210,7 +210,7 @@ async def test_lsp_references_success():
         mock_client.send_request = AsyncMock(return_value=[{"uri": "file:///path", "range": {}}])
 
         res = await lsp_references("/path/to/file.py", 1, 0, ctx)
-        assert "file:///path" in res
+        assert "/path" in res
 
 
 @pytest.mark.asyncio
@@ -226,6 +226,105 @@ async def test_lsp_document_symbols_success():
 
         res = await lsp_document_symbols("/path/to/file.py", ctx)
         assert "foo" in res
+
+def test_format_location():
+    from mcp_servers.lsp.server import _format_location
+    
+    # Test LocationLink
+    assert _format_location({
+        "targetUri": "file:///path/link",
+        "targetSelectionRange": {"start": {"line": 1, "character": 5}}
+    }) == "/path/link:2:5"
+    
+    # Test Location with no file://
+    assert _format_location({
+        "uri": "/path/no-scheme",
+        "range": {"start": {"line": 2, "character": 0}}
+    }) == "/path/no-scheme:3:0"
+    
+    # Test single dictionary return from definition
+    import asyncio
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from mcp_servers.lsp.server import lsp_definition
+
+    async def _test():
+        ctx = MagicMock()
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="def foo(): pass")),
+            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        ):
+            mock_client.sync_file = AsyncMock()
+            mock_client.send_request = AsyncMock(return_value={"uri": "file:///path", "range": {}})
+            res = await lsp_definition("/path/to/file.py", 1, 0, ctx)
+            assert "/path" in res
+    asyncio.run(_test())
+
+def test_lsp_definition_string_fallback():
+    import asyncio
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from mcp_servers.lsp.server import lsp_definition
+
+    async def _test():
+        ctx = MagicMock()
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="def foo(): pass")),
+            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        ):
+            mock_client.sync_file = AsyncMock()
+            mock_client.send_request = AsyncMock(return_value="some string")
+            res = await lsp_definition("/path/to/file.py", 1, 0, ctx)
+            assert res == "some string"
+    asyncio.run(_test())
+
+def test_lsp_references_string_fallback():
+    import asyncio
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from mcp_servers.lsp.server import lsp_references
+
+    async def _test():
+        ctx = MagicMock()
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="def foo(): pass")),
+            patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+        ):
+            mock_client.sync_file = AsyncMock()
+            mock_client.send_request = AsyncMock(return_value="some string")
+            res = await lsp_references("/path/to/file.py", 1, 0, ctx)
+            assert res == "some string"
+    asyncio.run(_test())
+
+
+@pytest.mark.asyncio
+async def test_lsp_diagnostics_with_items():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.get_diagnostics = MagicMock(return_value=[{"message": "err"}])
+
+        res = await lsp_diagnostics("/path/to/file.py", ctx)
+        assert "err" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_diagnostics_empty():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.server.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.get_diagnostics = MagicMock(return_value=[])
+
+        res = await lsp_diagnostics("/path/to/file.py", ctx)
+        assert "error-free" in res
 
 
 @pytest.mark.asyncio

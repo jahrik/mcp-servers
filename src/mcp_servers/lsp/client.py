@@ -304,6 +304,6 @@ class LSPClient:
                 },
             )
 
-    def get_diagnostics(self, uri: str) -> list[Any]:
-        """Return the most recently received diagnostics for a URI."""
-        return self._diagnostics.get(uri, [])
+    def get_diagnostics(self, uri: str) -> list[Any] | None:
+        """Return the most recently received diagnostics for a URI, or None if not yet received."""
+        return self._diagnostics.get(uri)
