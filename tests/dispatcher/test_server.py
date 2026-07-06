@@ -63,3 +63,15 @@ def test_get_job_status_not_found(mock_db: Path) -> None:
     status_str = server.get_job_status("nonexistent")
     status = json.loads(status_str)
     assert "error" in status
+
+
+def test_server_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def mock_run() -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(server.mcp, "run", mock_run)
+    server.main()
+    assert called
