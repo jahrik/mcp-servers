@@ -310,6 +310,31 @@ async def test_char_budget_truncates_rows(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nonfinite_floats_inside_lists():
+    res = json.loads(
+        await duckdb_query(DuckDbQueryArgs(query="SELECT [1.0, 'nan'::FLOAT] AS pair"))
+    )
+    assert res["results"] == [{"pair": [1.0, "nan"]}]
+
+
+@pytest.mark.asyncio
+async def test_invalid_memory_limit_falls_back(monkeypatch):
+    # A non-size value must not be interpolated into SET max_memory.
+    monkeypatch.setenv("MCP_DUCKDB_MEMORY_LIMIT", "2GB'; DROP TABLE x; --")
+    await duckdb_close_database(DuckDbCloseDatabaseArgs())
+    res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT 1 AS ok")))
+    assert res["results"] == [{"ok": 1}]
+    await duckdb_close_database(DuckDbCloseDatabaseArgs())
+
+
+@pytest.mark.asyncio
+async def test_invalid_max_chars_falls_back(monkeypatch):
+    monkeypatch.setenv("MCP_DATA_MAX_CHARS", "not-a-number")
+    res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT 1 AS ok")))
+    assert res["results"] == [{"ok": 1}]
+
+
+@pytest.mark.asyncio
 async def test_char_budget_single_giant_row(monkeypatch):
     monkeypatch.setenv("MCP_DATA_MAX_CHARS", "2000")
     res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT repeat('x', 5000) AS big")))
