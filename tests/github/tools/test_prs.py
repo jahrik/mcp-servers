@@ -291,6 +291,29 @@ async def test_gh_pr_request_reviewers_team(httpx_mock, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gh_pr_request_reviewers_warns_on_silent_drop(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    # GitHub returns 200 but omits the unrecognized reviewer from requested_reviewers.
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1/requested_reviewers",
+        json={"requested_reviewers": [{"login": "user1"}], "requested_teams": []},
+    )
+    res = await gh_pr_request_reviewers(
+        PrRequestReviewersArgs(
+            repo="octocat/repo",
+            pr=1,
+            reviewers=["user1", "copilot-pull-request-reviewer[bot]"],
+            team_reviewers=["ghost-team"],
+        )
+    )
+    data = json.loads(res)
+    assert "warning" in data
+    assert "copilot-pull-request-reviewer[bot]" in data["warning"]
+    assert "ghost-team" in data["warning"]
+    assert "user1" not in data["warning"]
+
+
+@pytest.mark.asyncio
 async def test_gh_pr_request_reviewers_validation_error(monkeypatch):
     monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     with pytest.raises(ValueError, match="Must provide either reviewers or team_reviewers"):

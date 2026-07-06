@@ -142,7 +142,7 @@ The review-read tools take `bot_only` to keep just the Copilot/bot comments — 
 - `gh_pr_edit`
 - `gh_pr_comment`
 - `gh_pr_merge`
-- `gh_pr_request_reviewers`
+- `gh_pr_request_reviewers` — to request a Copilot review, pass the login `Copilot` (not the `copilot-pull-request-reviewer[bot]` app slug). GitHub silently ignores an unrecognized reviewer login, so the tool adds a `warning` naming anyone it dropped.
 - `gh_issue_create`
 - `gh_issue_comment`
 - `gh_issue_edit` — change state (close/reopen via `state` + `state_reason`), title, body, or labels.

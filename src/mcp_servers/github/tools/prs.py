@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp_servers.github.client import GhError, gh_request, validate_repo
 
@@ -202,9 +203,29 @@ async def gh_pr_comment(args: PrCommentArgs) -> str:
     return json.dumps(resp.json())
 
 
+def _dropped_reviewers(args: PrRequestReviewersArgs, result: dict[str, Any]) -> list[str]:
+    """Names requested reviewers/teams that GitHub silently dropped from the response.
+
+    The REST endpoint returns 200 and simply omits a login/slug it doesn't recognize,
+    so a bad reviewer name looks like success (e.g. Copilot's login is ``Copilot``, not
+    ``copilot-pull-request-reviewer[bot]``). Compare what we asked for against what came
+    back (case-insensitive) and report the gap.
+    """
+    returned_users = {u.get("login", "").lower() for u in result.get("requested_reviewers", [])}
+    returned_teams = {t.get("slug", "").lower() for t in result.get("requested_teams", [])}
+    dropped = [r for r in (args.reviewers or []) if r.lower() not in returned_users]
+    dropped += [t for t in (args.team_reviewers or []) if t.lower() not in returned_teams]
+    return dropped
+
+
 @_audit_log
 async def gh_pr_request_reviewers(args: PrRequestReviewersArgs) -> str:
-    """Request reviewers for a pull request."""
+    """Request reviewers for a pull request.
+
+    GitHub's REST endpoint silently ignores an unrecognized reviewer login (200, no
+    error), so the response is checked against what was requested and a ``warning`` is
+    added naming anyone GitHub dropped. Copilot's requestable login is ``Copilot``.
+    """
     if not args.reviewers and not args.team_reviewers:
         raise ValueError("Must provide either reviewers or team_reviewers")
     repo = args.repo
@@ -218,7 +239,6 @@ async def gh_pr_request_reviewers(args: PrRequestReviewersArgs) -> str:
 
     try:
         resp = await gh_request("POST", f"repos/{repo}/pulls/{pr}/requested_reviewers", json=data)
-        return json.dumps(resp.json())
     except GhError as e:
         if e.status_code == 422:
             try:
@@ -232,6 +252,16 @@ async def gh_pr_request_reviewers(args: PrRequestReviewersArgs) -> str:
                 }
             )
         raise
+
+    result = resp.json()
+    dropped = _dropped_reviewers(args, result)
+    if dropped:
+        result["warning"] = (
+            f"GitHub accepted the request but did not add: {', '.join(dropped)}. "
+            "Verify the login/slug is exact and requestable (e.g. Copilot's login is "
+            "'Copilot', not 'copilot-pull-request-reviewer[bot]')."
+        )
+    return json.dumps(result)
 
 
 @_audit_log
