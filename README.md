@@ -10,12 +10,12 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 
 ## Servers
 
-| Server      | Script          | What it does                                                    |
-| ----------- | --------------- | --------------------------------------------------------------- |
-| `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
-| `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
-| `data`      | `mcp-data`      | SQL over large local files + scratch tables across calls (DuckDB engine) |
-| `dispatcher`| `mcp-dispatcher`| Asynchronous agent-to-agent task delegation and orchestration |
+| Server       | Script           | What it does                                                             |
+| ------------ | ---------------- | ------------------------------------------------------------------------ |
+| `github`     | `mcp-github`     | GitHub access (PRs, issues, files, code search, review threads)          |
+| `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
+| `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
+| `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
 
 ### `github`
 

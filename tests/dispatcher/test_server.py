@@ -36,7 +36,10 @@ def test_submit_job(
     # Assert subprocess was called
     mock_subprocess.assert_called_once()
     args, kwargs = mock_subprocess.call_args
-    assert args[0] == ["agy", '--print={"foo": "bar"}']
+    assert args[0][0] == "agy"
+    assert args[0][1].startswith("--print=")
+    payload = json.loads(args[0][1].removeprefix("--print="))
+    assert payload == {"foo": "bar"}
     assert kwargs.get("start_new_session") is True
     assert kwargs.get("stdout") == subprocess.DEVNULL
     assert kwargs.get("stderr") == subprocess.DEVNULL
@@ -72,7 +75,7 @@ def test_get_job_status(
     assert status["id"] == job_id
     assert status["status"] == "Running"
     assert status["worker_type"] == "test_worker"
-    assert status["payload"] == '{"foo": "bar"}'
+    assert status["payload"] == {"foo": "bar"}
 
 
 def test_get_job_status_not_found(mock_db: Path) -> None:

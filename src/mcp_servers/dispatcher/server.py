@@ -60,7 +60,7 @@ def submit_job(args: SubmitJobArgs) -> str:
         )
         conn.commit()
 
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if k in {"PATH", "USER", "HOME", "LANG", "LC_ALL"}}
     env["AGY_JOB_ID"] = job_id
     env["AGY_WORKER_TYPE"] = args.worker_type
     env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
@@ -99,7 +99,9 @@ def get_job_status(args: GetJobStatusArgs) -> str:
     if not row:
         return json.dumps({"error": f"Job {args.job_id} not found."})
 
-    return json.dumps(dict(row))
+    job_data = dict(row)
+    job_data["payload"] = json.loads(job_data["payload"])
+    return json.dumps(job_data)
 
 
 def main() -> None:
