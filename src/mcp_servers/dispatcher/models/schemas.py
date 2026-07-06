@@ -64,3 +64,12 @@ class ListJobsArgs(BaseModel, frozen=True):
         le=500,
         description="Maximum number of jobs to return.",
     )
+
+
+class CleanupJobsArgs(BaseModel, frozen=True):
+    older_than_days: int | None = Field(
+        None,
+        ge=0,
+        description="Only delete terminal jobs whose last update is older than this many "
+        "days. Omit to delete all terminal (Completed/Failed) jobs.",
+    )

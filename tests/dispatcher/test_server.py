@@ -9,6 +9,7 @@ import pytest
 
 from mcp_servers.dispatcher import server
 from mcp_servers.dispatcher.models.schemas import (
+    CleanupJobsArgs,
     GetJobStatusArgs,
     JobStatus,
     ListJobsArgs,
@@ -316,3 +317,69 @@ def test_list_jobs_limit(
 
     res = json.loads(jobs.list_jobs(ListJobsArgs(limit=3)))
     assert len(res) == 3
+
+
+def test_cleanup_jobs_removes_only_terminal(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "10")
+
+    j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    j2 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    j3 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=j1, status=JobStatus.COMPLETED))
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=j2, status=JobStatus.FAILED))
+
+    res = json.loads(jobs.cleanup_jobs(CleanupJobsArgs()))
+    assert res["deleted"] == 2
+
+    # The still-Running job survives.
+    remaining = json.loads(jobs.list_jobs(ListJobsArgs()))
+    assert [r["id"] for r in remaining] == [j3]
+
+
+def test_cleanup_jobs_older_than_keeps_fresh(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=j1, status=JobStatus.COMPLETED))
+
+    # A just-completed job is younger than a day, so nothing is pruned.
+    assert json.loads(jobs.cleanup_jobs(CleanupJobsArgs(older_than_days=1)))["deleted"] == 0
+    # Without the age filter it is removed.
+    assert json.loads(jobs.cleanup_jobs(CleanupJobsArgs()))["deleted"] == 1
+
+
+def test_submit_job_respects_max_running(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "2")
+
+    j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+
+    # Third submit exceeds the cap and is refused before spawning.
+    with pytest.raises(RuntimeError, match="Too many jobs in flight"):
+        jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+
+    # Finishing a job frees a slot.
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=j1, status=JobStatus.COMPLETED))
+    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))  # no raise
+
+
+def test_reap_children_drops_finished(
+    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+    # A finished worker reports an exit code from poll().
+    mock_subprocess.return_value.poll.return_value = 0
+
+    jobs._children.clear()
+    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    assert len(jobs._children) == 1  # tracked after spawn
+
+    jobs._reap_children()
+    assert jobs._children == []  # finished child reaped
