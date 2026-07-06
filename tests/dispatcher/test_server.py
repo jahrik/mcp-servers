@@ -29,7 +29,9 @@ def test_submit_job(
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
     # Test submission
-    job_id = server.submit_job("test_worker", '{"foo": "bar"}')
+    job_id = server.submit_job(
+        server.SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"})
+    )
 
     # Assert subprocess was called
     mock_subprocess.assert_called_once()
@@ -60,9 +62,11 @@ def test_get_job_status(
     mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    job_id = server.submit_job("test_worker", '{"foo": "bar"}')
+    job_id = server.submit_job(
+        server.SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"})
+    )
 
-    status_str = server.get_job_status(job_id)
+    status_str = server.get_job_status(server.GetJobStatusArgs(job_id=job_id))
     status = json.loads(status_str)
 
     assert status["id"] == job_id
@@ -72,7 +76,7 @@ def test_get_job_status(
 
 
 def test_get_job_status_not_found(mock_db: Path) -> None:
-    status_str = server.get_job_status("nonexistent")
+    status_str = server.get_job_status(server.GetJobStatusArgs(job_id="nonexistent"))
     status = json.loads(status_str)
     assert "error" in status
 
@@ -91,13 +95,7 @@ def test_server_main(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_submit_job_spawn_not_allowed(mock_db: Path) -> None:
     with pytest.raises(RuntimeError, match="Spawning is not allowed"):
-        server.submit_job("test_worker", '{"foo": "bar"}')
-
-
-def test_submit_job_invalid_json(mock_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    with pytest.raises(ValueError, match="Payload must be valid JSON"):
-        server.submit_job("test_worker", "invalid json")
+        server.submit_job(server.SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
 
 
 def test_submit_job_subprocess_exception(
@@ -107,7 +105,7 @@ def test_submit_job_subprocess_exception(
     mock_subprocess.side_effect = Exception("Popen failed")
 
     with pytest.raises(Exception, match="Popen failed"):
-        server.submit_job("test_worker", '{"foo": "bar"}')
+        server.submit_job(server.SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
 
     # Assert DB state is updated to Failed
     with sqlite3.connect(mock_db) as conn:

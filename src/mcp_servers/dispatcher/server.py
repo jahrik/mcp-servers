@@ -14,6 +14,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from .models.schemas import GetJobStatusArgs, SubmitJobArgs
+
 mcp = FastMCP("dispatcher")
 
 
@@ -40,23 +42,12 @@ def _init_db() -> None:
 
 
 @mcp.tool()
-def submit_job(worker_type: str, payload: str) -> str:
-    """Submits a new job to the dispatcher.
-
-    Args:
-        worker_type: The type of worker to handle this job.
-        payload: JSON string payload for the job.
-
-    Returns:
-        The newly generated job ID.
-    """
+def submit_job(args: SubmitJobArgs) -> str:
+    """Submits a new job to the dispatcher."""
     if os.environ.get("MCP_DISPATCHER_ALLOW_SPAWN") != "true":
         raise RuntimeError("Spawning is not allowed")
 
-    try:
-        json.loads(payload)
-    except json.JSONDecodeError as e:
-        raise ValueError("Payload must be valid JSON") from e
+    payload_str = json.dumps(args.payload)
 
     _init_db()
     job_id = str(uuid.uuid4())
@@ -65,19 +56,19 @@ def submit_job(worker_type: str, payload: str) -> str:
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "INSERT INTO jobs (id, status, worker_type, payload) VALUES (?, ?, ?, ?)",
-            (job_id, "Running", worker_type, payload),
+            (job_id, "Running", args.worker_type, payload_str),
         )
         conn.commit()
 
     env = os.environ.copy()
     env["AGY_JOB_ID"] = job_id
-    env["AGY_WORKER_TYPE"] = worker_type
+    env["AGY_WORKER_TYPE"] = args.worker_type
     env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
 
     # Asynchronously spawn the worker
     try:
         subprocess.Popen(
-            ["agy", f"--print={payload}"],
+            ["agy", f"--print={payload_str}"],
             start_new_session=True,
             env=env,
             stdout=subprocess.DEVNULL,
@@ -96,24 +87,17 @@ def submit_job(worker_type: str, payload: str) -> str:
 
 
 @mcp.tool()
-def get_job_status(job_id: str) -> str:
-    """Gets the status of a specific job.
-
-    Args:
-        job_id: The ID of the job to check.
-
-    Returns:
-        JSON string representation of the job row.
-    """
+def get_job_status(args: GetJobStatusArgs) -> str:
+    """Gets the status of a specific job."""
     _init_db()
     db_path = get_db_path()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (args.job_id,))
         row = cursor.fetchone()
 
     if not row:
-        return json.dumps({"error": f"Job {job_id} not found."})
+        return json.dumps({"error": f"Job {args.job_id} not found."})
 
     return json.dumps(dict(row))
 
