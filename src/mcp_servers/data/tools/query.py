@@ -3,27 +3,51 @@ from __future__ import annotations
 import asyncio
 import decimal
 import json
+import math
 import os
+import re
 import threading
-from datetime import date, datetime
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import date, datetime, time
 from typing import Any
 
 import duckdb
 
 from ..models.schemas import DuckDbCloseDatabaseArgs, DuckDbQueryArgs
 
+# Total output budget (chars). max_rows caps rows, not bytes — a wide text
+# column can still blow the context window, so the rendered JSON is capped too.
+DEFAULT_MAX_CHARS = 100_000
+
 
 class DuckDbJSONEncoder(json.JSONEncoder):
-    """Custom JSON encoder to safely serialize dates, decimals, and bytes."""
+    """Serialize DuckDB's richer types; stringify anything unknown rather than fail.
+
+    A data tool should return a readable value for every cell — UUID, INTERVAL
+    (timedelta), TIME, and any type not anticipated fall back to str().
+    """
 
     def default(self, o: Any) -> Any:
-        if isinstance(o, (datetime, date)):
+        if isinstance(o, (datetime, date, time)):
             return o.isoformat()
         if isinstance(o, decimal.Decimal):
+            # Lossy above ~15 significant digits; documented in docs/data.md.
             return float(o)
         if isinstance(o, bytes):
             return o.decode("utf-8", errors="replace")
-        return super().default(o)
+        return str(o)
+
+
+def _json_safe(value: Any) -> Any:
+    """Replace non-finite floats: json.dumps would emit NaN/Infinity, which is not valid JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)  # 'nan', 'inf', '-inf'
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 # Thread-safe global registries for connection sharing
@@ -31,6 +55,8 @@ _connections: dict[str, duckdb.DuckDBPyConnection] = {}
 _connection_read_only: dict[str, bool] = {}
 _connection_locks: dict[str, threading.Lock] = {}
 _registry_lock = threading.Lock()
+
+_MEMORY_LIMIT_RE = re.compile(r"[0-9]+(\.[0-9]+)?\s*(B|KB|MB|GB|TB|KIB|MIB|GIB|TIB)?", re.I)
 
 
 def get_connection_and_lock(
@@ -64,6 +90,8 @@ def get_connection_and_lock(
 
             # Apply initial configuration parameters
             mem_limit = os.getenv("MCP_DUCKDB_MEMORY_LIMIT", "2GB")
+            if not _MEMORY_LIMIT_RE.fullmatch(mem_limit.strip()):
+                mem_limit = "2GB"
             conn.execute(f"SET max_memory = '{mem_limit}'")
             if os.getenv("MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS", "false").lower() == "true":
                 conn.execute("SET enable_external_access = false")
@@ -74,6 +102,26 @@ def get_connection_and_lock(
                 _connection_locks[db_path] = threading.Lock()
 
         return _connections[db_path], _connection_locks[db_path]
+
+
+@contextmanager
+def connection_for(
+    db_path: str, read_only: bool, reuse_any_mode: bool = False
+) -> Iterator[duckdb.DuckDBPyConnection]:
+    """Yield the current connection for ``db_path`` while holding its lock.
+
+    Re-checks identity after acquiring the lock: a concurrent mode swap may
+    have closed the connection between the registry lookup and the lock
+    acquisition. While the lock is held here, a swap cannot close it. Bounded
+    retries; the last attempt proceeds regardless so this can never spin.
+    """
+    for attempt in range(3):
+        conn, lock = get_connection_and_lock(db_path, read_only, reuse_any_mode)
+        with lock:
+            if attempt == 2 or _connections.get(db_path) is conn:
+                yield conn
+                return
+            # Swapped under us before we got the lock; look it up again.
 
 
 def format_db_error(e: Exception) -> str:
@@ -94,12 +142,18 @@ def format_db_error(e: Exception) -> str:
     return json.dumps(output)
 
 
+def _max_chars() -> int:
+    try:
+        return int(os.getenv("MCP_DATA_MAX_CHARS", str(DEFAULT_MAX_CHARS)))
+    except ValueError:
+        return DEFAULT_MAX_CHARS
+
+
 def _execute_query(args: DuckDbQueryArgs) -> str:
     db_path = args.database or ":memory:"
 
     try:
-        conn, lock = get_connection_and_lock(db_path, args.read_only)
-        with lock:
+        with connection_for(db_path, args.read_only) as conn:
             cursor = conn.execute(args.query)
             if cursor.description is None:
                 return json.dumps({"results": []})
@@ -112,15 +166,43 @@ def _execute_query(args: DuckDbQueryArgs) -> str:
             if truncated:
                 rows = rows[: args.max_rows]
 
-            results = [dict(zip(cols, row, strict=True)) for row in rows]
-            output = {"results": results}
-            if truncated:
-                output["truncated"] = True
-                output["warning"] = (
-                    f"Results truncated to {args.max_rows} rows to prevent context window overflow."
-                )
+        results = [_json_safe(dict(zip(cols, row, strict=True))) for row in rows]
+        output: dict[str, Any] = {"results": results}
+        if truncated:
+            output["truncated"] = True
+            output["warning"] = (
+                f"Results truncated to {args.max_rows} rows to prevent context window overflow."
+            )
+        payload = json.dumps(output, cls=DuckDbJSONEncoder)
 
-            return json.dumps(output, cls=DuckDbJSONEncoder)
+        # Char budget: max_rows alone cannot protect the context window.
+        max_chars = _max_chars()
+        while len(payload) > max_chars and len(results) > 1:
+            results = results[: len(results) // 2]
+            output = {
+                "results": results,
+                "truncated": True,
+                "warning": (
+                    f"Output exceeded the {max_chars}-char budget (MCP_DATA_MAX_CHARS); "
+                    f"returning the first {len(results)} rows. Narrow the SELECT or "
+                    f"aggregate to see more."
+                ),
+            }
+            payload = json.dumps(output, cls=DuckDbJSONEncoder)
+        if len(payload) > max_chars:
+            return json.dumps(
+                {
+                    "error": (
+                        f"A single result row exceeds the {max_chars}-char output "
+                        f"budget (MCP_DATA_MAX_CHARS)."
+                    ),
+                    "suggestion": (
+                        "Select fewer or narrower columns, or aggregate "
+                        "(e.g. count/length) instead of returning raw values."
+                    ),
+                }
+            )
+        return payload
     except Exception as e:
         return format_db_error(e)
 
@@ -159,7 +241,8 @@ async def duckdb_query(args: DuckDbQueryArgs) -> str:
         query: The SQL query to run.
         database: Optional path to a persistent DuckDB file.
         read_only: Connect to the database in read-only mode (default False).
-        max_rows: Max rows to return (default 2000).
+        max_rows: Max rows to return (default 2000). Output is also capped at
+            MCP_DATA_MAX_CHARS characters (default 100000).
     """
     return await asyncio.to_thread(_execute_query, args)
 

@@ -1,4 +1,5 @@
 import json
+from datetime import UTC
 
 import pytest
 
@@ -72,6 +73,22 @@ async def test_list_tables():
     res = json.loads(await duckdb_list_tables(DuckDbListTablesArgs()))
     assert "t1" in res["tables"]
     assert "t2" in res["tables"]
+
+    # Clean up
+    await duckdb_close_database(DuckDbCloseDatabaseArgs())
+
+
+@pytest.mark.asyncio
+async def test_list_tables_sees_all_schemas():
+    # SHOW TABLES only covers main; tables in other schemas must be listed
+    # too, schema-qualified.
+    await duckdb_close_database(DuckDbCloseDatabaseArgs())
+    await duckdb_query(
+        DuckDbQueryArgs(query="CREATE SCHEMA stats; CREATE TABLE stats.runs (x INT)")
+    )
+
+    res = json.loads(await duckdb_list_tables(DuckDbListTablesArgs()))
+    assert "stats.runs" in res["tables"]
 
     # Clean up
     await duckdb_close_database(DuckDbCloseDatabaseArgs())
@@ -234,11 +251,71 @@ async def test_bytes_serialization():
 
 
 def test_json_encoder_fallback():
+    # Unknown types are stringified, never a serialization error.
     from mcp_servers.data.tools.query import DuckDbJSONEncoder
 
     encoder = DuckDbJSONEncoder()
-    with pytest.raises(TypeError):
-        encoder.encode(object())
+    assert json.loads(encoder.encode(object())).startswith("<object object at")
+
+
+@pytest.mark.asyncio
+async def test_rich_type_serialization():
+    # UUID, INTERVAL, TIME, and TIMESTAMPTZ show up constantly in real data
+    # (read_json auto-types UUID-shaped strings) and must serialize cleanly.
+    res = json.loads(
+        await duckdb_query(
+            DuckDbQueryArgs(
+                query="SELECT uuid() AS u, INTERVAL '3 days' AS iv, TIME '12:34:56' AS t, "
+                "TIMESTAMPTZ '2026-01-01 00:00:00+00' AS ts"
+            )
+        )
+    )
+    assert "error" not in res
+    row = res["results"][0]
+    assert len(row["u"]) == 36
+    assert "day" in row["iv"]
+    assert row["t"] == "12:34:56"
+    # TIMESTAMPTZ renders in the session timezone; compare the instant.
+    from datetime import datetime
+
+    assert datetime.fromisoformat(row["ts"]) == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_nonfinite_floats_are_valid_json():
+    # json.dumps emits bare NaN/Infinity by default, which strict JSON
+    # parsers reject; non-finite floats must come back as strings.
+    out = await duckdb_query(
+        DuckDbQueryArgs(query="SELECT 'nan'::FLOAT AS a, 'inf'::FLOAT AS b, '-inf'::FLOAT AS c")
+    )
+
+    def reject_constant(c):
+        raise ValueError(f"non-strict JSON constant {c}")
+
+    res = json.loads(out, parse_constant=reject_constant)
+    assert res["results"] == [{"a": "nan", "b": "inf", "c": "-inf"}]
+
+
+@pytest.mark.asyncio
+async def test_char_budget_truncates_rows(monkeypatch):
+    monkeypatch.setenv("MCP_DATA_MAX_CHARS", "2000")
+    res = json.loads(
+        await duckdb_query(
+            DuckDbQueryArgs(query="SELECT range AS i, repeat('x', 100) AS pad FROM range(500)")
+        )
+    )
+    assert res["truncated"] is True
+    assert "MCP_DATA_MAX_CHARS" in res["warning"]
+    assert 0 < len(res["results"]) < 500
+
+
+@pytest.mark.asyncio
+async def test_char_budget_single_giant_row(monkeypatch):
+    monkeypatch.setenv("MCP_DATA_MAX_CHARS", "2000")
+    res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT repeat('x', 5000) AS big")))
+    assert "error" in res
+    assert "budget" in res["error"]
+    assert "suggestion" in res
 
 
 @pytest.mark.asyncio

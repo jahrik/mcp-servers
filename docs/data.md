@@ -27,7 +27,7 @@ Execute a SQL query against DuckDB. Supports both read-only queries (`SELECT`) a
 - `query` (string, required): The SQL query to run.
 - `database` (string, optional): Path to a persistent DuckDB database file (e.g., `data.db`). If omitted, runs against a temporary in-memory database.
 - `read_only` (boolean, optional): Connect to the database in read-only mode. Defaults to `false`.
-- `max_rows` (integer, optional): Maximum rows to return (default `2000`). Automatically truncates results to prevent context window overflow.
+- `max_rows` (integer, optional): Maximum rows to return (default `2000`). Automatically truncates results to prevent context window overflow. The rendered output is additionally capped at `MCP_DATA_MAX_CHARS` characters (default `100000`) — wide rows are trimmed further, and a single row over the budget returns an error suggesting narrower columns or aggregation.
 
 ### `duckdb_describe`
 Get the schema (columns, types, nullability) of a file or table.
@@ -37,7 +37,7 @@ Get the schema (columns, types, nullability) of a file or table.
 - `database` (string, optional): Path to a persistent DuckDB database file (optional).
 
 ### `duckdb_list_tables`
-List all tables and views in the database.
+List all tables and views across every schema in the database. Names outside the `main` schema come back schema-qualified (e.g. `stats.runs`).
 
 **Arguments**:
 - `database` (string, optional): Path to a persistent DuckDB database file (optional).
@@ -52,8 +52,21 @@ Close and release the connection and file lock for a database.
 
 Configuration parameters are read from environment variables:
 
-- `MCP_DUCKDB_MEMORY_LIMIT`: Restricts memory allocated to DuckDB (e.g., `4GB`, `512MB`). Defaults to `2GB` to prevent query tasks from causing system Out-Of-Memory events.
-- `MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS`: Set to `true` to block DuckDB from accessing remote HTTPS resources (remote Parquet files, S3 buckets, etc.). Enables `SET enable_external_access = false`. Defaults to `false`.
+- `MCP_DUCKDB_MEMORY_LIMIT`: Restricts memory allocated to DuckDB (e.g., `4GB`, `512MB`). Defaults to `2GB` to prevent query tasks from causing system Out-Of-Memory events. Values that don't look like a size fall back to the default.
+- `MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS`: Set to `true` to enable `SET enable_external_access = false`. **This blocks all file access — local CSV/JSON/Parquet files as well as remote HTTPS/S3 resources — and `ATTACH`/extension loading.** Since querying local files is this server's primary purpose, leave it `false` unless you specifically want a SQL-only sandbox over already-created tables. Defaults to `false`.
+- `MCP_DATA_MAX_CHARS`: Total character budget for a query result (default `100000`). `max_rows` caps rows, not bytes; this caps the rendered JSON so wide text columns cannot flood the agent's context window.
+
+## Type serialization
+
+Result cells are rendered to JSON as follows:
+
+- `DATE`/`TIME`/`TIMESTAMP`/`TIMESTAMPTZ` → ISO-8601 strings
+- `DECIMAL` → float (lossy above ~15 significant digits — cast to `VARCHAR` in SQL if exact digits matter)
+- `HUGEINT`/`UHUGEINT` → JSON integer (exact here, but beyond 2^53 it will lose precision in JavaScript-based consumers)
+- `BLOB` → UTF-8 with replacement characters
+- `NaN`/`Infinity` floats → the strings `"nan"`/`"inf"`/`"-inf"` (raw JSON `NaN` is not valid JSON)
+- `LIST`/`STRUCT`/`MAP` → JSON arrays/objects
+- `UUID`, `INTERVAL`, and any other type → their string representation
 
 ## Usage Examples
 
