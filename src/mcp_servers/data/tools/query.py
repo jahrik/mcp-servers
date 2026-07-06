@@ -148,7 +148,12 @@ def _execute_close(args: DuckDbCloseDatabaseArgs) -> str:
 
 
 async def duckdb_query(args: DuckDbQueryArgs) -> str:
-    """Execute a SQL query against DuckDB (in-memory or persistent file).
+    """Run SQL over large local data files or scratch tables without reading them into context.
+
+    Queries CSV/JSON/JSONL/Parquet files in place (e.g. SELECT level, count(*)
+    FROM 'app.jsonl' GROUP BY 1) and returns only the answer rows. Tables built
+    here persist across tool calls, so intermediate results can be stashed
+    instead of re-derived. DuckDB SQL dialect.
 
     Args:
         query: The SQL query to run.

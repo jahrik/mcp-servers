@@ -1,6 +1,13 @@
-# duckdb
+# data
 
-A Python-based MCP server that exposes DuckDB's analytical and relational SQL capabilities to AI agents. It allows agents to dynamically create, manipulate, and query local databases and files (CSV, JSON, Parquet) with thread safety and state retention.
+Local data analysis for AI agents without burning context: run SQL over large local files
+(CSV, JSON, JSONL, Parquet) in place, and keep scratch tables alive across tool calls —
+working memory outside the context window. This is not a general database connector; it is
+an agent tool for pushing computation to the data and pulling back only the answer rows.
+
+DuckDB is the engine, which is why the tools keep the `duckdb_*` prefix: the name tells the
+agent which SQL dialect applies and that file-query idioms like `SELECT * FROM 'file.csv'`
+work. Registered as `data`, installed as `mcp-data`.
 
 ## Features
 

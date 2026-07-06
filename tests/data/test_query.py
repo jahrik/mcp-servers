@@ -2,14 +2,14 @@ import json
 
 import pytest
 
-from mcp_servers.duckdb.models.schemas import (
+from mcp_servers.data.models.schemas import (
     DuckDbCloseDatabaseArgs,
     DuckDbDescribeArgs,
     DuckDbListTablesArgs,
     DuckDbQueryArgs,
 )
-from mcp_servers.duckdb.tools.query import duckdb_close_database, duckdb_query
-from mcp_servers.duckdb.tools.schema import duckdb_describe, duckdb_list_tables
+from mcp_servers.data.tools.query import duckdb_close_database, duckdb_query
+from mcp_servers.data.tools.schema import duckdb_describe, duckdb_list_tables
 
 
 @pytest.mark.asyncio
@@ -234,7 +234,7 @@ async def test_bytes_serialization():
 
 
 def test_json_encoder_fallback():
-    from mcp_servers.duckdb.tools.query import DuckDbJSONEncoder
+    from mcp_servers.data.tools.query import DuckDbJSONEncoder
 
     encoder = DuckDbJSONEncoder()
     with pytest.raises(TypeError):
@@ -244,7 +244,7 @@ def test_json_encoder_fallback():
 @pytest.mark.asyncio
 async def test_cursor_description_none(mocker):
     # Mock connection execution to return a cursor with description = None
-    from mcp_servers.duckdb.tools import query
+    from mcp_servers.data.tools import query
 
     mock_cursor = mocker.MagicMock()
     mock_cursor.description = None
@@ -253,7 +253,7 @@ async def test_cursor_description_none(mocker):
     mock_conn.execute.return_value = mock_cursor
 
     mocker.patch(
-        "mcp_servers.duckdb.tools.query.get_connection_and_lock",
+        "mcp_servers.data.tools.query.get_connection_and_lock",
         return_value=(mock_conn, mocker.MagicMock()),
     )
 

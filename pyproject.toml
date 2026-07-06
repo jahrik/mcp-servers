@@ -19,7 +19,7 @@ dependencies = [
 # as `type: stdio` MCP servers (command: mcp-github, etc.).
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"
-mcp-duckdb = "mcp_servers.duckdb.server:main"
+mcp-data = "mcp_servers.data.server:main"
 
 [dependency-groups]
 dev = [

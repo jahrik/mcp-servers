@@ -1,4 +1,4 @@
-import mcp_servers.duckdb.server
+import mcp_servers.data.server
 
 
 def test_server_main(monkeypatch):
@@ -8,6 +8,6 @@ def test_server_main(monkeypatch):
         nonlocal called
         called = True
 
-    monkeypatch.setattr(mcp_servers.duckdb.server.mcp, "run", mock_run)
-    mcp_servers.duckdb.server.main()
+    monkeypatch.setattr(mcp_servers.data.server.mcp, "run", mock_run)
+    mcp_servers.data.server.main()
     assert called

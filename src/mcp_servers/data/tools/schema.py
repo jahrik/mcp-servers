@@ -51,7 +51,10 @@ def _execute_list_tables(args: DuckDbListTablesArgs) -> str:
 
 
 async def duckdb_describe(args: DuckDbDescribeArgs) -> str:
-    """Get the schema (columns, types, nullability) of a file or table.
+    """Peek at the schema (columns, types) of a local data file or scratch table without reading it.
+
+    Use before duckdb_query on an unfamiliar CSV/JSON/JSONL/Parquet file to
+    learn its columns from a zero-row scan.
 
     Args:
         path: Path to the target file (CSV, JSON, Parquet) or table name.

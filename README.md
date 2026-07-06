@@ -14,7 +14,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | ----------- | --------------- | --------------------------------------------------------------- |
 | `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
 | `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
-| `duckdb`    | `mcp-duckdb`    | DuckDB SQL operations (querying local CSV/JSON files, memory)   |
+| `data`      | `mcp-data`      | SQL over large local files + scratch tables across calls (DuckDB engine) |
 
 ### `github`
 
@@ -29,11 +29,15 @@ every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_
 `root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
 mutates a working copy and needs no credentials.
 
-### `duckdb`
+### `data`
 
-A Python DuckDB server providing dynamic SQL execution, schema description, and table discovery. It enables connection caching across tool calls, thread safety per database path, and query limits to prevent context window overflow.
+Local data analysis without burning agent context: run SQL over large CSV/JSON/JSONL/Parquet
+files in place and keep scratch tables alive across tool calls, pulling only answer rows into
+the context window. Not a general database connector — it gives agents a computation escape
+hatch and working memory outside the context window. DuckDB is the engine, so the tools keep
+the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query idioms apply).
 
-[Read the detailed `duckdb` server documentation](docs/duckdb.md).
+[Read the detailed `data` server documentation](docs/data.md).
 
 ## Install
 
