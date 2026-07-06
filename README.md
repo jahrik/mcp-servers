@@ -15,6 +15,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
 | `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 | `data`      | `mcp-data`      | SQL over large local files + scratch tables across calls (DuckDB engine) |
+| `swarm`     | `mcp-swarm`     | Asynchronous agent-to-agent task delegation and orchestration |
 
 ### `github`
 
@@ -40,6 +41,10 @@ hatch and working memory outside the context window. DuckDB is the engine, so th
 the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query idioms apply).
 
 [Read the detailed `data` server documentation](docs/data.md).
+
+### `swarm`
+
+Asynchronous agent-to-agent task delegation and orchestration. Exposes `submit_job` and `get_job_status` tools to allow agents to spawn and monitor background subagents for long-running workflows.
 
 ## Install
 
