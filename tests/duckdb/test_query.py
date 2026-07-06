@@ -280,14 +280,46 @@ async def test_read_only_bypass_with_cached_rw_connection(tmp_path):
     assert "error" not in res1
 
     # 2. Run query with read_only=True to insert a row.
-    # Since we cache by (db_path, read_only), the read-only request gets its own connection
-    # and should fail because write is not permitted on a read-only connection.
+    # The cached read-write connection is swapped for a read-only one on the
+    # mode mismatch, so the write must fail on the read-only connection.
     args2 = DuckDbQueryArgs(
         database=str(db_file), query="INSERT INTO test_bypass VALUES (42)", read_only=True
     )
     res2 = json.loads(await duckdb_query(args2))
     assert "error" in res2
     assert "read-only" in res2["error"].lower()
+
+    # Clean up
+    await duckdb_close_database(DuckDbCloseDatabaseArgs(database=str(db_file)))
+
+
+@pytest.mark.asyncio
+async def test_read_tools_reuse_cached_connection(tmp_path):
+    # describe/list_tables must reuse the cached connection whatever its mode,
+    # instead of closing and reopening it (which would drop session state).
+    db_file = tmp_path / "reuse.db"
+
+    res1 = json.loads(
+        await duckdb_query(
+            DuckDbQueryArgs(
+                database=str(db_file),
+                query="CREATE TEMP TABLE session_state (x INT)",
+                read_only=False,
+            )
+        )
+    )
+    assert "error" not in res1
+
+    # The temp table only exists on the original connection: describing it
+    # proves the read-write connection was reused rather than swapped out.
+    res2 = json.loads(
+        await duckdb_describe(DuckDbDescribeArgs(path="session_state", database=str(db_file)))
+    )
+    assert "error" not in res2
+    assert res2["schema"][0]["column_name"] == "x"
+
+    res3 = json.loads(await duckdb_list_tables(DuckDbListTablesArgs(database=str(db_file))))
+    assert "error" not in res3
 
     # Clean up
     await duckdb_close_database(DuckDbCloseDatabaseArgs(database=str(db_file)))

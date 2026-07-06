@@ -34,19 +34,30 @@ _registry_lock = threading.Lock()
 
 
 def get_connection_and_lock(
-    db_path: str, read_only: bool
+    db_path: str, read_only: bool, reuse_any_mode: bool = False
 ) -> tuple[duckdb.DuckDBPyConnection, threading.Lock]:
-    """Retrieve or initialize a cached database connection and its corresponding access lock."""
+    """Retrieve or initialize a cached database connection and its corresponding access lock.
+
+    With ``reuse_any_mode`` a cached connection is returned whatever its mode
+    (callers that only read work fine on either), so read tools don't force a
+    close/reopen cycle that would drop session state (temp tables, extensions).
+    """
     # Force read-write for in-memory databases because read-only :memory: is not supported.
     if db_path == ":memory:":
         read_only = False
 
     with _registry_lock:
         if db_path in _connections:
+            if reuse_any_mode:
+                return _connections[db_path], _connection_locks[db_path]
             existing_readonly = _connection_read_only.get(db_path, True)
             if existing_readonly != read_only:
+                # Swap modes under the per-database lock so a query in flight
+                # on the old connection is never closed mid-execution.
                 conn = _connections.pop(db_path)
-                conn.close()
+                _connection_read_only.pop(db_path, None)
+                with _connection_locks[db_path]:
+                    conn.close()
 
         if db_path not in _connections:
             conn = duckdb.connect(database=db_path, read_only=read_only)

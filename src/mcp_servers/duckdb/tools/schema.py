@@ -25,7 +25,7 @@ def _execute_describe(args: DuckDbDescribeArgs) -> str:
         query = f"DESCRIBE {quote_identifier(target)}"
 
     try:
-        conn, lock = get_connection_and_lock(db_path, read_only=True)
+        conn, lock = get_connection_and_lock(db_path, read_only=True, reuse_any_mode=True)
         with lock:
             cursor = conn.execute(query)
             cols = [desc[0] for desc in cursor.description]
@@ -40,7 +40,7 @@ def _execute_list_tables(args: DuckDbListTablesArgs) -> str:
     db_path = args.database or ":memory:"
 
     try:
-        conn, lock = get_connection_and_lock(db_path, read_only=True)
+        conn, lock = get_connection_and_lock(db_path, read_only=True, reuse_any_mode=True)
         with lock:
             cursor = conn.execute("SHOW TABLES")
             rows = cursor.fetchall()
