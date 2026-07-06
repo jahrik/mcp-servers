@@ -62,7 +62,7 @@ def submit_job(worker_type: str, payload: str) -> str:
 
     # Asynchronously spawn the worker
     subprocess.Popen(
-        ["agy", "-p", "--", payload],
+        ["agy", f"--print={payload}"],
         start_new_session=True,
         env=env,
     )

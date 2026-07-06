@@ -29,7 +29,7 @@ def test_submit_job(mock_db: Path, mock_subprocess: MagicMock) -> None:
     # Assert subprocess was called
     mock_subprocess.assert_called_once()
     args, kwargs = mock_subprocess.call_args
-    assert args[0] == ["agy", "-p", "--", '{"foo": "bar"}']
+    assert args[0] == ["agy", '--print={"foo": "bar"}']
     assert kwargs.get("start_new_session") is True
     assert "env" in kwargs
     assert kwargs["env"]["AGY_JOB_ID"] == job_id
