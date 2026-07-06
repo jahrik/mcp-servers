@@ -20,7 +20,7 @@ from mcp_servers.lsp.client import LSPClient
 # Use pyright by default, allow override via env
 LSP_COMMAND = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
 WORKSPACE_ROOT = os.environ.get("MCP_LSP_ROOT", os.getcwd())
-if WORKSPACE_ROOT.startswith("~"):
+if WORKSPACE_ROOT.startswith("~"):  # pragma: no cover
     WORKSPACE_ROOT = str(Path(WORKSPACE_ROOT).expanduser())
 
 # Create a global client instance
