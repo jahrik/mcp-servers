@@ -1,4 +1,4 @@
-"""A swarm MCP server for delegating jobs to subagents.
+"""A dispatcher MCP server for delegating jobs to subagents.
 
 Manages job state in an SQLite database and asynchronously spawns subagents to handle them.
 """
@@ -14,9 +14,9 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("swarm")
+mcp = FastMCP("dispatcher")
 
-DB_PATH = Path("~/.config/agents/swarm.db").expanduser()
+DB_PATH = Path("~/.config/agents/dispatcher.db").expanduser()
 
 
 def _init_db() -> None:
@@ -37,7 +37,7 @@ def _init_db() -> None:
 
 @mcp.tool()
 def submit_job(worker_type: str, payload: str) -> str:
-    """Submits a new job to the swarm.
+    """Submits a new job to the dispatcher.
 
     Args:
         worker_type: The type of worker to handle this job.

@@ -6,19 +6,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mcp_servers.swarm import server
+from mcp_servers.dispatcher import server
 
 
 @pytest.fixture
 def mock_db(tmp_path: Path) -> Generator[Path, None, None]:
-    db_path = tmp_path / "test_swarm.db"
-    with patch("mcp_servers.swarm.server.DB_PATH", db_path):
+    db_path = tmp_path / "test_dispatcher.db"
+    with patch("mcp_servers.dispatcher.server.DB_PATH", db_path):
         yield db_path
 
 
 @pytest.fixture
 def mock_subprocess() -> Generator[MagicMock, None, None]:
-    with patch("mcp_servers.swarm.server.subprocess.Popen") as mock_popen:
+    with patch("mcp_servers.dispatcher.server.subprocess.Popen") as mock_popen:
         yield mock_popen
 
 
