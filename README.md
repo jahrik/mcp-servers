@@ -14,6 +14,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | ----------- | --------------- | --------------------------------------------------------------- |
 | `github`    | `mcp-github`    | GitHub access (PRs, issues, files, code search, review threads) |
 | `workspace` | `mcp-workspace` | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
+| `data`      | `mcp-data`      | SQL over large local files + scratch tables across calls (DuckDB engine) |
 
 ### `github`
 
@@ -27,6 +28,18 @@ A read-only local server: four tools (`ws_status`, `ws_repo`, `ws_branches`, `ws
 every git repo under one root (default `~/github`, override with `MCP_WORKSPACE_ROOT` or a
 `root` argument) — dirty trees, ahead/behind upstreams, stashes, and stale branches. It never
 mutates a working copy and needs no credentials.
+
+[Read the detailed `workspace` server documentation](docs/workspace.md).
+
+### `data`
+
+Local data analysis without burning agent context: run SQL over large CSV/JSON/JSONL/Parquet
+files in place and keep scratch tables alive across tool calls, pulling only answer rows into
+the context window. Not a general database connector — it gives agents a computation escape
+hatch and working memory outside the context window. DuckDB is the engine, so the tools keep
+the `duckdb_*` prefix (the name tells the agent which SQL dialect and file-query idioms apply).
+
+[Read the detailed `data` server documentation](docs/data.md).
 
 ## Install
 

@@ -1,0 +1,30 @@
+"""data MCP Server — local data analysis without burning context.
+
+Lets an agent run SQL over large local files (CSV/JSON/JSONL/Parquet) in place
+and keep scratch tables alive across tool calls, pulling only answer rows into
+the context window. DuckDB is the engine, so tools keep the duckdb_* prefix —
+the name tells the agent which SQL dialect and file-query idioms apply.
+"""
+
+from __future__ import annotations
+
+from mcp.server.fastmcp import FastMCP
+
+from . import tools
+
+mcp = FastMCP("data")
+
+# Register tools
+mcp.tool()(tools.duckdb_query)
+mcp.tool()(tools.duckdb_describe)
+mcp.tool()(tools.duckdb_list_tables)
+mcp.tool()(tools.duckdb_close_database)
+
+
+def main() -> None:
+    """Console-script entry point."""
+    mcp.run()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
