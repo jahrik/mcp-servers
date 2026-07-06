@@ -39,7 +39,7 @@ def test_submit_job(
     args, kwargs = mock_subprocess.call_args
     assert args[0][0] == "agy"
     assert args[0][1].startswith("--print=You are a background worker")
-    assert f"for job_id '{job_id}'" in args[0][1]
+    assert "Read your AGY_WORKER_TYPE and AGY_JOB_ID" in args[0][1]
     assert "get_job_status tool" in args[0][1]
     assert kwargs.get("start_new_session") is True
     assert kwargs.get("stdout") == subprocess.DEVNULL
@@ -80,7 +80,9 @@ def test_get_job_status(
 
 
 def test_get_job_status_not_found(mock_db: Path) -> None:
-    status_str = server.get_job_status(server.GetJobStatusArgs(job_id="nonexistent"))
+    status_str = server.get_job_status(
+        server.GetJobStatusArgs(job_id="00000000-0000-0000-0000-000000000000")
+    )
     status = json.loads(status_str)
     assert "error" in status
 

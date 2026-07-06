@@ -68,7 +68,7 @@ def submit_job(args: SubmitJobArgs) -> str:
     env["AGY_JOB_ID"] = job_id
     env["AGY_WORKER_TYPE"] = args.worker_type
     env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
-    prompt = f"You are a background worker for the '{args.worker_type}' subagent. Fetch your job payload using the get_job_status tool for job_id '{job_id}' and execute the task. When finished, you must update the job status in the dispatcher DB."
+    prompt = "You are a background worker. Read your AGY_WORKER_TYPE and AGY_JOB_ID from your environment variables. Fetch your job payload using the get_job_status tool for that job_id and execute the task. When finished, you must update the job status in the dispatcher DB."
 
     # Asynchronously spawn the worker
     try:
