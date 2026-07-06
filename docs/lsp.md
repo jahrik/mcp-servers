@@ -11,13 +11,13 @@ The `lsp` server proxies requests to an underlying Language Server Protocol (LSP
     - `line` (integer): 1-indexed line number.
     - `char` (integer): 0-indexed character position.
 - `lsp_definition`
-  - **Description**: Returns the file and line number where the symbol at the requested position is defined.
+  - **Description**: Returns the file, line number, and character where the symbol at the requested position is defined (formatted as `path:line:char`).
   - **Inputs**:
     - `filepath` (string): Absolute or workspace-relative path to the file.
     - `line` (integer): 1-indexed line number.
     - `char` (integer): 0-indexed character position.
 - `lsp_references`
-  - **Description**: Returns a list of all locations in the codebase that reference the symbol at the requested position.
+  - **Description**: Returns a list of all locations in the codebase that reference the symbol at the requested position (each formatted as `path:line:char`).
   - **Inputs**:
     - `filepath` (string): Absolute or workspace-relative path to the file.
     - `line` (integer): 1-indexed line number.
