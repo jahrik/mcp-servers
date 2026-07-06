@@ -79,6 +79,7 @@ class LSPClient:
 
         self._process = None
         self._pending_requests.clear()
+        self._document_versions.clear()
         logger.info("Stopped LSP process.")
 
     async def _read_loop(self) -> None:

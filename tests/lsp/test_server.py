@@ -18,8 +18,6 @@ async def test_server_lifespan():
         mock_client.initialize = AsyncMock()
         mock_client.stop = AsyncMock()
 
-        from unittest.mock import MagicMock
-
         mock_server = MagicMock()
         async with server_lifespan(mock_server):
             mock_client.start.assert_called_once()
@@ -48,7 +46,7 @@ async def test_lsp_hover_line_too_small():
     ctx = MagicMock()
     with patch("pathlib.Path.exists", return_value=True):
         res = await lsp_hover("/tmp/file.py", 0, 1, ctx)
-        assert "line must be 1 or greater" in res
+        assert "line must be >= 1 and char must be >= 0" in res
 
 
 @pytest.mark.asyncio

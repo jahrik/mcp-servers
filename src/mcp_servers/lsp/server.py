@@ -46,7 +46,12 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
         line: 1-indexed line number.
         char: 0-indexed character position.
     """
-    filepath_obj = Path(filepath).resolve()
+    # Ensure the path is within the allowed workspace
+    p = Path(filepath)
+    if not p.is_absolute():
+        filepath_obj = (Path(WORKSPACE_ROOT) / p).resolve()
+    else:
+        filepath_obj = p.resolve()
     root_obj = Path(WORKSPACE_ROOT).resolve()
     try:
         filepath_obj.relative_to(root_obj)
@@ -56,8 +61,8 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     if not filepath_obj.exists():
         return f"Error: File not found: {filepath}"
 
-    if line < 1:
-        return "Error querying LSP: line must be 1 or greater (1-indexed)."
+    if line < 1 or char < 0:
+        return "Error: line must be >= 1 and char must be >= 0"
 
     uri = filepath_obj.as_uri()
 
