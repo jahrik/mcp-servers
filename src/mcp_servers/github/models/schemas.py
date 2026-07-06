@@ -58,6 +58,17 @@ class PrCommentArgs(BaseModel, frozen=True):
     body: str = Field(description="The comment body.")
 
 
+class PrRequestReviewersArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    reviewers: list[str] | None = Field(
+        None, description="List of usernames to request review from."
+    )
+    team_reviewers: list[str] | None = Field(
+        None, description="List of team slugs to request review from."
+    )
+
+
 class PrMergeArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     pr: int = Field(description="Pull request number.")
