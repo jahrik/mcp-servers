@@ -143,22 +143,32 @@ def update_job_status(args: UpdateJobStatusArgs) -> str:
     _init_db()
     db_path = get_db_path()
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT status FROM jobs WHERE id = ?", (args.job_id,)).fetchone()
-        if row is None:
-            return json.dumps({"error": f"Job {args.job_id} not found."})
-
-        current = row["status"]
-        if current in _TERMINAL_STATUSES:
-            return json.dumps(
-                {"error": f"Job {args.job_id} is already {current}; terminal status is immutable."}
-            )
-
-        conn.execute(
-            "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
-            (args.status.value, _now(), args.job_id),
+        # Guard the transition atomically: the WHERE clause refuses to touch a
+        # row already in a terminal state, so two concurrent callers can't race
+        # a SELECT/UPDATE window to clobber a terminal status. rowcount then
+        # tells us whether anything changed.
+        terminal = tuple(_TERMINAL_STATUSES)
+        placeholders = ", ".join("?" for _ in terminal)
+        cursor = conn.execute(
+            f"UPDATE jobs SET status = ?, updated_at = ? "  # noqa: S608 — placeholders only
+            f"WHERE id = ? AND status NOT IN ({placeholders})",
+            (args.status.value, _now(), args.job_id, *terminal),
         )
         conn.commit()
+
+        if cursor.rowcount == 0:
+            # No row updated: the job is unknown, or it is already terminal.
+            current = conn.execute(
+                "SELECT status FROM jobs WHERE id = ?", (args.job_id,)
+            ).fetchone()
+            if current is None:
+                return json.dumps({"error": f"Job {args.job_id} not found."})
+            return json.dumps(
+                {
+                    "error": f"Job {args.job_id} is already {current[0]}; "
+                    "terminal status is immutable."
+                }
+            )
 
     job_data = _fetch_job(db_path, args.job_id)
     return json.dumps(job_data)
