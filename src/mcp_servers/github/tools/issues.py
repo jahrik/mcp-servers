@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp_servers.github.client import gh_request, validate_repo
 
-from ..models.schemas import IssueArgs, IssueCommentArgs, IssueCreateArgs, IssueListArgs
+from ..models.schemas import (
+    IssueArgs,
+    IssueCommentArgs,
+    IssueCreateArgs,
+    IssueEditArgs,
+    IssueListArgs,
+)
 from ..utils import _audit_log
 
 
@@ -107,4 +114,31 @@ async def gh_issue_comment(args: IssueCommentArgs) -> str:
     body = args.body
     validate_repo(repo)
     resp = await gh_request("POST", f"repos/{repo}/issues/{issue}/comments", json={"body": body})
+    return json.dumps(resp.json())
+
+
+@_audit_log
+async def gh_issue_edit(args: IssueEditArgs) -> str:
+    """Edit an issue's state or metadata (close/reopen, title, body, labels).
+
+    Only the fields you set are sent. ``state='closed'`` with
+    ``state_reason='completed'`` or ``'not_planned'`` closes the issue;
+    ``state='open'`` reopens it. Convention: close only your own stale or
+    resolved issues, never triage the maintainer's.
+    """
+    repo = args.repo
+    number = args.number
+    validate_repo(repo)
+    data: dict[str, Any] = {}
+    if args.state is not None:
+        data["state"] = args.state
+    if args.state_reason is not None:
+        data["state_reason"] = args.state_reason
+    if args.title is not None:
+        data["title"] = args.title
+    if args.body is not None:
+        data["body"] = args.body
+    if args.labels is not None:
+        data["labels"] = args.labels
+    resp = await gh_request("PATCH", f"repos/{repo}/issues/{number}", json=data)
     return json.dumps(resp.json())

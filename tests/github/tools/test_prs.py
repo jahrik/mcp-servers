@@ -122,6 +122,55 @@ async def test_gh_pr_create(httpx_mock, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gh_pr_create_defaults_base_to_default_branch(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo", json={"default_branch": "develop"}
+    )
+    httpx_mock.add_response(
+        method="POST", url="https://api.github.com/repos/octocat/repo/pulls", json={"number": 7}
+    )
+    res = await gh_pr_create(PrCreateArgs(repo="octocat/repo", title="t", body="b", head="feature"))
+    assert json.loads(res)["number"] == 7
+    create_req = httpx_mock.get_requests(method="POST")[0]
+    assert json.loads(create_req.content)["base"] == "develop"
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_create_surfaces_422_errors(httpx_mock, monkeypatch):
+    from mcp_servers.github.client import GhError
+
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/pulls",
+        status_code=422,
+        json={"message": "Validation Failed", "errors": [{"field": "head", "code": "invalid"}]},
+    )
+    with pytest.raises(GhError, match="invalid"):
+        await gh_pr_create(
+            PrCreateArgs(repo="octocat/repo", title="t", body="b", head="nope", base="main")
+        )
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_create_reraises_non_validation_error(httpx_mock, monkeypatch):
+    from mcp_servers.github.client import GhError
+
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/repos/octocat/repo/pulls",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    with pytest.raises(GhError, match="404"):
+        await gh_pr_create(
+            PrCreateArgs(repo="octocat/repo", title="t", body="b", head="feature", base="main")
+        )
+
+
+@pytest.mark.asyncio
 async def test_gh_pr_edit(httpx_mock, monkeypatch):
     monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     httpx_mock.add_response(

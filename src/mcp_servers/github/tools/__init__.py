@@ -9,7 +9,13 @@ from .api import (
     gh_search_issues,
     gh_search_prs,
 )
-from .issues import gh_issue_comment, gh_issue_create, gh_issue_get, gh_issue_list
+from .issues import (
+    gh_issue_comment,
+    gh_issue_create,
+    gh_issue_edit,
+    gh_issue_get,
+    gh_issue_list,
+)
 from .prs import (
     gh_pr_checks,
     gh_pr_comment,
@@ -35,6 +41,7 @@ __all__ = [
     "gh_file_get",
     "gh_issue_comment",
     "gh_issue_create",
+    "gh_issue_edit",
     "gh_issue_get",
     "gh_issue_list",
     "gh_pr_checks",

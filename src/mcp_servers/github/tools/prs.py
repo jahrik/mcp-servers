@@ -144,15 +144,36 @@ async def gh_pr_checks(args: PrArgs) -> str:
 
 @_audit_log
 async def gh_pr_create(args: PrCreateArgs) -> str:
-    """Create a pull request."""
+    """Create a pull request.
+
+    When ``base`` is omitted it defaults to the repository's default branch
+    (one extra GET), matching ``gh pr create`` rather than 422ing on the
+    GitHub API's required ``base`` field. A genuine 422 surfaces the API's
+    ``errors`` array so the failing field is visible.
+    """
     repo = args.repo
     validate_repo(repo)
-    data = {"title": args.title, "body": args.body, "head": args.head}
-    if args.base:
-        data["base"] = args.base
+    base = args.base
+    if not base:
+        repo_resp = await gh_request("GET", f"repos/{repo}")
+        base = repo_resp.json().get("default_branch", "main")
+    data = {"title": args.title, "body": args.body, "head": args.head, "base": base}
     if args.draft:  # pragma: no cover
         data["draft"] = args.draft
-    resp = await gh_request("POST", f"repos/{repo}/pulls", json=data)
+    try:
+        resp = await gh_request("POST", f"repos/{repo}/pulls", json=data)
+    except GhError as e:
+        errors = None
+        if e.status_code == 422 and e.stderr:
+            try:
+                errors = json.loads(e.stderr).get("errors")
+            except json.JSONDecodeError:  # pragma: no cover
+                errors = None
+        if errors:
+            raise GhError(
+                f"{e}\nErrors: {json.dumps(errors)}", stderr=e.stderr, status_code=422
+            ) from e
+        raise
     return json.dumps(resp.json())
 
 

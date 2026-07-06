@@ -106,6 +106,23 @@ class IssueCommentArgs(BaseModel, frozen=True):
     body: str = Field(description="The comment body.")
 
 
+class IssueEditArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    number: int = Field(description="Issue number.")
+    state: typing.Literal["open", "closed"] | None = Field(
+        None, description="``open`` to reopen, ``closed`` to close."
+    )
+    state_reason: typing.Literal["completed", "not_planned", "reopened"] | None = Field(
+        None,
+        description="Reason for the state change: ``completed``, ``not_planned``, or ``reopened``.",
+    )
+    title: str | None = Field(None, description="Optional new title for the issue.")
+    body: str | None = Field(None, description="Optional new body for the issue.")
+    labels: list[str] | None = Field(
+        None, description="Replace the issue's labels with this set (omit to leave unchanged)."
+    )
+
+
 class FileGetArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     path: str = Field(description="Path to the file within the repo.")
