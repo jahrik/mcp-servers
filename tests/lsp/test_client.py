@@ -209,7 +209,7 @@ async def test_initialize(client):
 async def test_open_file(client):
     client.send_notification = AsyncMock()
     await client.open_file("file:///tmp/test.py", "python", "print('hello')")
-    client.send_notification.assert_called_once()
+    assert client.send_notification.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -298,6 +298,21 @@ async def test_read_loop(client, mock_process):
 async def test_read_loop_empty_content(client, mock_process):
     mock_process.stdout.readline.side_effect = [
         b"Content-Length: 0\r\n",
+        b"\r\n",
+        b"",  # EOF
+    ]
+
+    client._process = mock_process
+    client._handle_payload = MagicMock()
+
+    await client._read_loop()
+    client._handle_payload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_read_loop_invalid_content_length(client, mock_process):
+    mock_process.stdout.readline.side_effect = [
+        b"Content-Length: bad\r\n",
         b"\r\n",
         b"",  # EOF
     ]

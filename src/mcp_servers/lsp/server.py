@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import shlex
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from mcp.server.fastmcp import Context, FastMCP
 
 from mcp_servers.lsp.client import LSPClient
 
 # Use pyright by default, allow override via env
-LSP_COMMAND = os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio").split()
+LSP_COMMAND = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
 WORKSPACE_ROOT = os.environ.get("MCP_LSP_ROOT", os.getcwd())
 
 # Create a global client instance
@@ -22,7 +25,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     await lsp_client.start()
 
     # Send initialize handshake
-    uri = f"file://{WORKSPACE_ROOT}"
+    uri = Path(WORKSPACE_ROOT).resolve().as_uri()
     await lsp_client.initialize(uri)
 
     yield {}
@@ -43,16 +46,20 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
         line: 1-indexed line number.
         char: 0-indexed character position.
     """
-    if not os.path.isabs(filepath):
-        return f"Error: Filepath must be absolute: {filepath}"
+    filepath_obj = Path(filepath).resolve()
+    root_obj = Path(WORKSPACE_ROOT).resolve()
+    try:
+        filepath_obj.relative_to(root_obj)
+    except ValueError:
+        return f"Error: Filepath must be within the workspace root {WORKSPACE_ROOT}"
 
-    if not os.path.exists(filepath):
+    if not filepath_obj.exists():
         return f"Error: File not found: {filepath}"
 
-    with open(filepath, encoding="utf-8") as f:
+    with open(filepath_obj, encoding="utf-8") as f:
         content = f.read()
 
-    uri = f"file://{filepath}"
+    uri = filepath_obj.as_uri()
 
     # Send didOpen to synchronize VFS
     language_id = "python"
@@ -80,6 +87,8 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
             )
         else:
             return str(contents)
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return f"Error querying LSP: {e}"
 

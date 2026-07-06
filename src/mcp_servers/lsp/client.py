@@ -64,6 +64,10 @@ class LSPClient:
         if self._stderr_task:
             self._stderr_task.cancel()
 
+        tasks_to_await = [t for t in (self._read_task, self._stderr_task) if t]
+        if tasks_to_await:
+            await asyncio.gather(*tasks_to_await, return_exceptions=True)
+
         try:
             self._process.terminate()
             await asyncio.wait_for(self._process.wait(), timeout=5.0)
@@ -95,7 +99,10 @@ class LSPClient:
                         break  # Empty line signifies end of headers
 
                     if line_str.lower().startswith("content-length:"):
-                        content_length = int(line_str.split(":")[1].strip())
+                        try:
+                            content_length = int(line_str.split(":", 1)[1].strip())
+                        except ValueError:
+                            logger.error(f"Invalid Content-Length header: {line_str}")
 
                 if content_length == 0:
                     continue
@@ -117,7 +124,7 @@ class LSPClient:
         except Exception as e:
             logger.error(f"Error in LSP read loop: {e}", exc_info=True)
         finally:
-            for _req_id, future in self._pending_requests.items():
+            for _req_id, future in list(self._pending_requests.items()):
                 if not future.done():
                     future.set_exception(RuntimeError("LSP connection closed"))
             self._pending_requests.clear()
@@ -256,6 +263,7 @@ class LSPClient:
 
     async def open_file(self, uri: str, language_id: str, text: str) -> None:
         """Send a didOpen notification to the language server."""
+        await self.send_notification("textDocument/didClose", {"textDocument": {"uri": uri}})
         await self.send_notification(
             "textDocument/didOpen",
             {"textDocument": {"uri": uri, "languageId": language_id, "version": 1, "text": text}},

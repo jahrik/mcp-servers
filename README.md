@@ -16,6 +16,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 | `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
 | `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
+| `lsp`        | `mcp-lsp`        | Language Server Protocol (LSP) proxy                                     |
 
 ### `github`
 
