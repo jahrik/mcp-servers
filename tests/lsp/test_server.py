@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -31,21 +31,29 @@ async def test_server_lifespan():
 @pytest.mark.asyncio
 async def test_lsp_hover_not_absolute():
     # Context initialization
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     res = await lsp_hover("relative/path.py", 1, 1, ctx)
     assert "Filepath must be within the workspace root" in res or "File not found" in res
 
 
 @pytest.mark.asyncio
 async def test_lsp_hover_not_found():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     res = await lsp_hover("/absolute/not/found.py", 1, 1, ctx)
     assert res.startswith("Error: File not found")
 
 
 @pytest.mark.asyncio
+async def test_lsp_hover_line_too_small():
+    ctx = MagicMock()
+    with patch("pathlib.Path.exists", return_value=True):
+        res = await lsp_hover("/tmp/file.py", 0, 1, ctx)
+        assert "line must be 1 or greater" in res
+
+
+@pytest.mark.asyncio
 async def test_lsp_hover_success():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -69,7 +77,7 @@ async def test_lsp_hover_success():
 
 @pytest.mark.asyncio
 async def test_lsp_hover_empty_response():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -84,7 +92,7 @@ async def test_lsp_hover_empty_response():
 
 @pytest.mark.asyncio
 async def test_lsp_hover_list_response():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -101,7 +109,7 @@ async def test_lsp_hover_list_response():
 
 @pytest.mark.asyncio
 async def test_lsp_hover_string_response():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -116,7 +124,7 @@ async def test_lsp_hover_string_response():
 
 @pytest.mark.asyncio
 async def test_lsp_hover_error():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -132,7 +140,7 @@ async def test_lsp_hover_error():
 async def test_lsp_hover_cancelled():
     import asyncio
 
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
@@ -146,7 +154,7 @@ async def test_lsp_hover_cancelled():
 
 @pytest.mark.asyncio
 async def test_lsp_hover_outside_workspace():
-    ctx = patch("mcp.server.fastmcp.Context").start()
+    ctx = MagicMock()
     with patch("mcp_servers.lsp.server.WORKSPACE_ROOT", "/var/lib"):
         res = await lsp_hover("/tmp/foo.py", 1, 1, ctx)
         assert "must be within the workspace root" in res

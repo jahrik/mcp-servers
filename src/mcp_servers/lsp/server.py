@@ -56,8 +56,8 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     if not filepath_obj.exists():
         return f"Error: File not found: {filepath}"
 
-    with open(filepath_obj, encoding="utf-8") as f:
-        content = f.read()
+    if line < 1:
+        return "Error querying LSP: line must be 1 or greater (1-indexed)."
 
     uri = filepath_obj.as_uri()
 
@@ -69,6 +69,8 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
         language_id = "rust"
 
     try:
+        with open(filepath_obj, encoding="utf-8") as f:
+            content = f.read()
         await lsp_client.sync_file(uri, language_id, content)
 
         # Send hover request (LSP uses 0-indexed lines)
