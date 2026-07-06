@@ -29,17 +29,18 @@ _TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED.value, JobStatus.FAILED.valu
 # unbounded agents). Override with MCP_DISPATCHER_MAX_RUNNING.
 _DEFAULT_MAX_RUNNING = 16
 
-# Handles to spawned workers. We keep them only so finished children can be
-# reaped (``poll()``) and don't linger as zombies — the dispatcher is a
-# long-lived process, and start_new_session workers stay its children.
-_children: list[subprocess.Popen[bytes]] = []
-
 
 def _reap_children() -> None:
-    """Poll tracked worker processes so finished ones don't accumulate as zombies."""
-    for proc in list(_children):
-        if proc.poll() is not None:
-            _children.remove(proc)
+    """Reap any finished children so they don't accumulate as zombies."""
+    try:
+        while True:
+            # -1 means any child process. WNOHANG returns immediately if none have exited.
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        # Raised if there are no children at all.
+        pass
 
 
 def _max_running() -> int:
@@ -114,24 +115,30 @@ def submit_job(args: SubmitJobArgs) -> str:
     now = _now()
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
-        # Bound fan-out: refuse to spawn once too many jobs are already Running.
-        cap = _max_running()
-        running = int(
-            conn.execute(
-                "SELECT COUNT(*) FROM jobs WHERE status = ?", (JobStatus.RUNNING.value,)
-            ).fetchone()[0]
-        )
-        if running >= cap:
-            raise RuntimeError(
-                f"Too many jobs in flight: {running} Running >= cap {cap}. "
-                "Wait for jobs to finish or raise MCP_DISPATCHER_MAX_RUNNING."
+        conn.isolation_level = None
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Bound fan-out: refuse to spawn once too many jobs are already Running.
+            cap = _max_running()
+            running = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE status = ?", (JobStatus.RUNNING.value,)
+                ).fetchone()[0]
             )
-        conn.execute(
-            "INSERT INTO jobs (id, status, worker_type, payload, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (job_id, JobStatus.RUNNING.value, args.worker_type, payload_str, now, now),
-        )
-        conn.commit()
+            if running >= cap:
+                raise RuntimeError(
+                    f"Too many jobs in flight: {running} Running >= cap {cap}. "
+                    "Wait for jobs to finish or raise MCP_DISPATCHER_MAX_RUNNING."
+                )
+            conn.execute(
+                "INSERT INTO jobs (id, status, worker_type, payload, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, JobStatus.RUNNING.value, args.worker_type, payload_str, now, now),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     env = {k: v for k, v in os.environ.items() if k in {"PATH", "USER", "HOME", "LANG", "LC_ALL"}}
     env["AGY_JOB_ID"] = job_id
@@ -145,7 +152,7 @@ def submit_job(args: SubmitJobArgs) -> str:
     # `agy --print` blocks reading it and hangs forever (job stuck Running,
     # empty log). DEVNULL gives it an immediate EOF so it runs non-interactively.
     try:
-        proc = subprocess.Popen(
+        subprocess.Popen(
             ["agy", f"--print={prompt}"],
             start_new_session=True,
             env=env,
@@ -153,7 +160,6 @@ def submit_job(args: SubmitJobArgs) -> str:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        _children.append(proc)
     except Exception:
         with contextlib.closing(sqlite3.connect(db_path)) as conn:
             conn.execute(

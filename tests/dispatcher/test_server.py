@@ -271,12 +271,19 @@ def test_connections_are_closed(
 def test_list_jobs_newest_first(
     mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import time
-
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
+    # Monkeypatch _now to return deterministic, ordered timestamps
+    counter = 0
+
+    def mock_now() -> str:
+        nonlocal counter
+        counter += 1
+        return f"2026-01-01T00:00:0{counter}Z"
+
+    monkeypatch.setattr(jobs, "_now", mock_now)
+
     job_id1 = jobs.submit_job(SubmitJobArgs(worker_type="worker1", payload={}))
-    time.sleep(0.01)
     job_id2 = jobs.submit_job(SubmitJobArgs(worker_type="worker2", payload={}))
 
     res = json.loads(jobs.list_jobs(ListJobsArgs()))
@@ -370,19 +377,23 @@ def test_submit_job_respects_max_running(
     jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))  # no raise
 
 
-def test_reap_children_drops_finished(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    # A finished worker reports an exit code from poll().
-    mock_subprocess.return_value.poll.return_value = 0
+def test_reap_children_drops_finished(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
 
-    jobs._children.clear()
-    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
-    assert len(jobs._children) == 1  # tracked after spawn
+    calls = 0
 
+    def mock_waitpid(pid: int, options: int) -> tuple[int, int]:
+        nonlocal calls
+        if calls == 0:
+            calls += 1
+            return 1234, 0  # Reaped one process
+        raise ChildProcessError()  # No more children
+
+    monkeypatch.setattr(os, "waitpid", mock_waitpid)
+
+    # Should consume the one child and then handle the ChildProcessError gracefully.
     jobs._reap_children()
-    assert jobs._children == []  # finished child reaped
+    assert calls == 1
 
 
 @pytest.mark.parametrize("raw", ["not-an-int", "0", "-3"])
