@@ -335,6 +335,30 @@ async def test_invalid_max_chars_falls_back(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_query_timeout_interrupts_runaway_sql(monkeypatch):
+    monkeypatch.setenv("MCP_DATA_QUERY_TIMEOUT", "0.2")
+    res = json.loads(
+        await duckdb_query(
+            DuckDbQueryArgs(query="SELECT count(*) FROM range(100000000) a, range(1000) b")
+        )
+    )
+    assert "error" in res
+    assert "timeout" in res["error"]
+    assert "MCP_DATA_QUERY_TIMEOUT" in res["suggestion"]
+
+
+@pytest.mark.asyncio
+async def test_query_timeout_disabled_and_invalid(monkeypatch):
+    monkeypatch.setenv("MCP_DATA_QUERY_TIMEOUT", "0")
+    res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT 1 AS ok")))
+    assert res["results"] == [{"ok": 1}]
+
+    monkeypatch.setenv("MCP_DATA_QUERY_TIMEOUT", "not-a-number")
+    res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT 2 AS ok")))
+    assert res["results"] == [{"ok": 2}]
+
+
+@pytest.mark.asyncio
 async def test_char_budget_single_giant_row(monkeypatch):
     monkeypatch.setenv("MCP_DATA_MAX_CHARS", "2000")
     res = json.loads(await duckdb_query(DuckDbQueryArgs(query="SELECT repeat('x', 5000) AS big")))

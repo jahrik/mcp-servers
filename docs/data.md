@@ -55,6 +55,7 @@ Configuration parameters are read from environment variables:
 - `MCP_DUCKDB_MEMORY_LIMIT`: Restricts memory allocated to DuckDB (e.g., `4GB`, `512MB`). Defaults to `2GB` to prevent query tasks from causing system Out-Of-Memory events. Values that don't look like a size fall back to the default.
 - `MCP_DUCKDB_DISABLE_EXTERNAL_ACCESS`: Set to `true` to enable `SET enable_external_access = false`. **This blocks all file access — local CSV/JSON/Parquet files as well as remote HTTPS/S3 resources — and `ATTACH`/extension loading.** Since querying local files is this server's primary purpose, leave it `false` unless you specifically want a SQL-only sandbox over already-created tables. Defaults to `false`.
 - `MCP_DATA_MAX_CHARS`: Total character budget for a query result (default `100000`). `max_rows` caps rows, not bytes; this caps the rendered JSON so wide text columns cannot flood the agent's context window.
+- `MCP_DATA_QUERY_TIMEOUT`: Seconds before a running query is interrupted (default `60`, `0` disables). Stops runaway SQL (an accidental cross join over a large file) from blocking the server indefinitely.
 
 ## Type serialization
 

@@ -20,6 +20,10 @@ from ..models.schemas import DuckDbCloseDatabaseArgs, DuckDbQueryArgs
 # column can still blow the context window, so the rendered JSON is capped too.
 DEFAULT_MAX_CHARS = 100_000
 
+# Watchdog for runaway SQL (seconds); 0 disables. Without it a bad query
+# (accidental cross join over a big file) blocks its worker thread forever.
+DEFAULT_QUERY_TIMEOUT = 60.0
+
 
 class DuckDbJSONEncoder(json.JSONEncoder):
     """Serialize DuckDB's richer types; stringify anything unknown rather than fail.
@@ -129,7 +133,13 @@ def format_db_error(e: Exception) -> str:
     err_msg = str(e)
     suggestion = None
 
-    if "Table with name" in err_msg or "does not exist" in err_msg:
+    if isinstance(e, duckdb.InterruptException):
+        err_msg = f"Query exceeded the {_query_timeout():g}s timeout and was interrupted."
+        suggestion = (
+            "Simplify the query (check joins for accidental cross products), add filters, "
+            "or raise MCP_DATA_QUERY_TIMEOUT."
+        )
+    elif "Table with name" in err_msg or "does not exist" in err_msg:
         suggestion = "The table or view does not exist. Use the duckdb_list_tables tool to view available tables."
     elif "No files found" in err_msg or "cannot open file" in err_msg:
         suggestion = "Verify that the file path is correct and that the file exists."
@@ -149,19 +159,34 @@ def _max_chars() -> int:
         return DEFAULT_MAX_CHARS
 
 
+def _query_timeout() -> float:
+    try:
+        return float(os.getenv("MCP_DATA_QUERY_TIMEOUT", str(DEFAULT_QUERY_TIMEOUT)))
+    except ValueError:
+        return DEFAULT_QUERY_TIMEOUT
+
+
 def _execute_query(args: DuckDbQueryArgs) -> str:
     db_path = args.database or ":memory:"
 
     try:
         with connection_for(db_path, args.read_only) as conn:
-            cursor = conn.execute(args.query)
-            if cursor.description is None:
-                return json.dumps({"results": []})
+            timeout = _query_timeout()
+            watchdog = threading.Timer(timeout, conn.interrupt) if timeout > 0 else None
+            if watchdog:
+                watchdog.start()
+            try:
+                cursor = conn.execute(args.query)
+                if cursor.description is None:
+                    return json.dumps({"results": []})
 
-            cols = [desc[0] for desc in cursor.description]
+                cols = [desc[0] for desc in cursor.description]
 
-            # Fetch up to max_rows + 1 to detect truncation
-            rows = cursor.fetchmany(args.max_rows + 1)
+                # Fetch up to max_rows + 1 to detect truncation
+                rows = cursor.fetchmany(args.max_rows + 1)
+            finally:
+                if watchdog:
+                    watchdog.cancel()
             truncated = len(rows) > args.max_rows
             if truncated:
                 rows = rows[: args.max_rows]
