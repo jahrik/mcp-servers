@@ -1,3 +1,9 @@
+"""MCP server that wraps an external LSP (Language Server Protocol) process.
+
+This server provides tools to query an underlying LSP server (e.g. pyright)
+for hover information, diagnostics, and more.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +20,8 @@ from mcp_servers.lsp.client import LSPClient
 # Use pyright by default, allow override via env
 LSP_COMMAND = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
 WORKSPACE_ROOT = os.environ.get("MCP_LSP_ROOT", os.getcwd())
+if WORKSPACE_ROOT.startswith("~"):
+    WORKSPACE_ROOT = str(Path(WORKSPACE_ROOT).expanduser())
 
 # Create a global client instance
 lsp_client = LSPClient(LSP_COMMAND)
@@ -21,17 +29,18 @@ lsp_client = LSPClient(LSP_COMMAND)
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[dict]:
-    # Start and initialize the LSP server
-    await lsp_client.start()
+    try:
+        # Start and initialize the LSP server
+        await lsp_client.start()
 
-    # Send initialize handshake
-    uri = Path(WORKSPACE_ROOT).resolve().as_uri()
-    await lsp_client.initialize(uri)
+        # Send initialize handshake
+        uri = Path(WORKSPACE_ROOT).resolve().as_uri()
+        await lsp_client.initialize(uri)
 
-    yield {}
-
-    # Shutdown gracefully
-    await lsp_client.stop()
+        yield {}
+    finally:
+        # Shutdown gracefully
+        await lsp_client.stop()
 
 
 mcp = FastMCP("lsp", lifespan=server_lifespan)
