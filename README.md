@@ -16,6 +16,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 | `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
 | `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
+| `lsp`        | `mcp-lsp`        | Language Server Protocol (LSP) proxy                                     |
 
 ### `github`
 
@@ -57,6 +58,19 @@ Asynchronous agent-to-agent task delegation and orchestration. Lets agents spawn
 - `MCP_DISPATCHER_ALLOW_SPAWN` (Required): Must be set to `"true"` or `"1"` to allow `submit_job` to spawn background processes.
 - `MCP_DISPATCHER_DB_PATH`: Overrides the default SQLite database path (defaults to `~/.mcp/dispatcher.db`).
 - `MCP_DISPATCHER_MAX_RUNNING`: Max concurrently-`Running` jobs before `submit_job` is refused (default `16`).
+
+### `lsp`
+
+Language Server Protocol (LSP) proxy. Lets agents query a language server (e.g. `pyright`) for type signatures and documentation without managing the LSP lifecycle themselves.
+
+**Tools:**
+- `lsp_hover` — Get the type signature and docstring for the symbol at a given file and position.
+
+**Configuration:**
+- `MCP_LSP_COMMAND`: The shell command to launch the underlying LSP server (default: `"pyright-langserver --stdio"`).
+- `MCP_LSP_ROOT`: The root workspace directory the LSP server should analyze (default: `$PWD`, automatically expands `~`).
+
+[Read the detailed `lsp` server documentation](docs/lsp.md).
 
 ## Install
 
