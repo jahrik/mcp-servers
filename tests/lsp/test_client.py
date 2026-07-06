@@ -265,6 +265,19 @@ async def test_handle_payload_unhandled():
 
 
 @pytest.mark.asyncio
+async def test_handle_payload_publish_diagnostics():
+    client = LSPClient(["dummy"])
+    client._handle_payload(
+        {
+            "method": "textDocument/publishDiagnostics",
+            "params": {"uri": "file:///tmp/foo.py", "diagnostics": [{"message": "error1"}]},
+        }
+    )
+    assert client.get_diagnostics("file:///tmp/foo.py") == [{"message": "error1"}]
+    assert client.get_diagnostics("file:///tmp/other.py") == []
+
+
+@pytest.mark.asyncio
 async def test_stderr_loop(client, mock_process):
     mock_process.stderr.readline.side_effect = [b"log line\n", b""]
     client._process = mock_process
