@@ -65,6 +65,11 @@ Language Server Protocol (LSP) proxy. Lets agents query a language server (e.g. 
 
 **Tools:**
 - `lsp_hover` — Get the type signature and docstring for the symbol at a given file and position.
+- `lsp_definition` — Jump directly to the exact file and line where a symbol is defined.
+- `lsp_references` — Find every place in the codebase where a function or variable is used.
+- `lsp_document_symbols` — Return a structured list of all classes, methods, and functions in a specific file.
+- `lsp_workspace_symbols` — Search the entire project for a specific function or class name.
+- `lsp_diagnostics` — Return any syntax errors or type-checking warnings for a file.
 
 **Configuration:**
 - `MCP_LSP_COMMAND`: The shell command to launch the underlying LSP server (default: `"pyright-langserver --stdio"`).

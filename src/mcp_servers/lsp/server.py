@@ -85,7 +85,7 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
     """Get the type signature and docstring for the symbol at the given position.
 
     Args:
-        filepath: Absolute path to the file.
+        filepath: Absolute or workspace-relative path to the file.
         line: 1-indexed line number.
         char: 0-indexed character position.
     """
@@ -125,7 +125,7 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
     """Get the definition location for the symbol at the given position.
 
     Args:
-        filepath: Absolute path to the file.
+        filepath: Absolute or workspace-relative path to the file.
         line: 1-indexed line number.
         char: 0-indexed character position.
     """
@@ -158,7 +158,7 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
     """Get all reference locations for the symbol at the given position.
 
     Args:
-        filepath: Absolute path to the file.
+        filepath: Absolute or workspace-relative path to the file.
         line: 1-indexed line number.
         char: 0-indexed character position.
     """
@@ -194,7 +194,7 @@ async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
     """Get all symbols (classes, functions, methods, etc.) defined in the given file.
 
     Args:
-        filepath: Absolute path to the file.
+        filepath: Absolute or workspace-relative path to the file.
     """
     filepath_obj = _prepare_file(filepath)
     if isinstance(filepath_obj, str):
@@ -243,7 +243,7 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
     """Get the syntax and type-checking diagnostics for the given file.
 
     Args:
-        filepath: Absolute path to the file.
+        filepath: Absolute or workspace-relative path to the file.
     """
     filepath_obj = _prepare_file(filepath)
     if isinstance(filepath_obj, str):
@@ -251,11 +251,15 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
 
     try:
         uri = await _sync_file_with_lsp(filepath_obj)
-        # We need to give the LSP a moment to process and publish diagnostics
-        # Diagnostics are sent asynchronously, so we sleep briefly to await them.
-        await asyncio.sleep(0.5)
+        # We need to give the LSP a moment to process and publish diagnostics.
+        # Poll briefly, up to 0.5s.
+        diagnostics = []
+        for _ in range(5):
+            diagnostics = lsp_client.get_diagnostics(uri)
+            if diagnostics:
+                break
+            await asyncio.sleep(0.1)
 
-        diagnostics = lsp_client.get_diagnostics(uri)
         if not diagnostics:
             return "No diagnostics found for this file (it may be error-free, or the LSP hasn't finished analyzing it yet)."
 
