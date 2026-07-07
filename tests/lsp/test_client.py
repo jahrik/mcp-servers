@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp_servers.lsp.client import LSPClient, LSPError
+from mcp_servers.lsp.client import LSPClient, LSPError, LSPSession
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def mock_process():
 
 @pytest.fixture
 def client():
-    return LSPClient(["dummy", "cmd"])
+    return LSPSession(["dummy", "cmd"])
 
 
 def test_lsp_error():
@@ -220,7 +220,7 @@ async def test_sync_file(client):
 
 @pytest.mark.asyncio
 async def test_handle_payload_response():
-    client = LSPClient(["dummy"])
+    client = LSPSession(["dummy"])
 
     future = asyncio.Future()
     client._pending_requests[1] = future
@@ -239,7 +239,7 @@ async def test_handle_payload_response():
 
 @pytest.mark.asyncio
 async def test_handle_payload_server_request():
-    client = LSPClient(["dummy"])
+    client = LSPSession(["dummy"])
     client._send = AsyncMock()
 
     # Method without ID
@@ -259,14 +259,14 @@ async def test_handle_payload_server_request():
 
 @pytest.mark.asyncio
 async def test_handle_payload_unhandled():
-    client = LSPClient(["dummy"])
+    client = LSPSession(["dummy"])
     # Shouldn't crash
     client._handle_payload({"unknown": "type"})
 
 
 @pytest.mark.asyncio
 async def test_handle_payload_publish_diagnostics():
-    client = LSPClient(["dummy"])
+    client = LSPSession(["dummy"])
     client._handle_payload(
         {
             "method": "textDocument/publishDiagnostics",
@@ -425,3 +425,411 @@ async def test_read_loop_unhandled_method_send_error(client, mock_process):
 
     # Should be called to send the error response, and the exception should be caught silently
     client._send.assert_called_once()
+
+
+@pytest.fixture
+def router():
+    return LSPClient(root_uri="file:///workspace")
+
+
+@pytest.mark.asyncio
+async def test_router_start_stop(router):
+    await router.start()
+    assert router._reap_task is not None
+    await router.stop()
+    assert router._reap_task is None
+    assert len(router.sessions) == 0
+
+
+@pytest.mark.asyncio
+async def test_router_initialize(router):
+    res = await router.initialize("file:///new_root")
+    assert router.root_uri == "file:///new_root"
+    assert "capabilities" in res
+
+
+@pytest.mark.asyncio
+async def test_router_get_or_create_session(router):
+    with patch("mcp_servers.lsp.client.LSPSession") as MockSession:
+        mock_session = MockSession.return_value
+        mock_session.is_alive.return_value = True
+        mock_session.start = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.stop = AsyncMock()
+
+        session = await router._get_or_create_session("python")
+        assert session == mock_session
+        assert "python" in router.sessions
+        mock_session.start.assert_awaited_once()
+        mock_session.initialize.assert_awaited_once_with("file:///workspace")
+
+        # Get existing alive session
+        session2 = await router._get_or_create_session("python")
+        assert session2 == mock_session
+        assert mock_session.start.call_count == 1
+
+        # Session crashed
+        mock_session.is_alive.return_value = False
+        with patch("mcp_servers.lsp.client.LSPSession", return_value=mock_session):
+            await router._get_or_create_session("python")
+            mock_session.stop.assert_awaited_once()
+
+        with pytest.raises(ValueError, match="Unsupported language: unknown"):
+            await router._get_or_create_session("unknown")
+
+
+@pytest.mark.asyncio
+async def test_router_get_or_create_session_init_error(router):
+    with patch("mcp_servers.lsp.client.LSPSession") as MockSession:
+        mock_session = MockSession.return_value
+        mock_session.start = AsyncMock()
+        mock_session.initialize = AsyncMock(side_effect=Exception("init error"))
+        mock_session.stop = AsyncMock()
+
+        with pytest.raises(Exception, match="init error"):
+            await router._get_or_create_session("python")
+        mock_session.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_sync_file(router):
+    with patch.object(router, "_get_or_create_session") as mock_get:
+        mock_session = MagicMock()
+        mock_session.sync_file = AsyncMock()
+        mock_get.return_value = mock_session
+
+        await router.sync_file("file:///a.py", "python", "code")
+        mock_session.sync_file.assert_awaited_once_with("file:///a.py", "python", "code")
+
+        # Retry logic
+        mock_session.sync_file = AsyncMock(side_effect=[RuntimeError("broken pipe"), None])
+        await router.sync_file("file:///a.py", "python", "code")
+        assert mock_session.sync_file.call_count == 2
+        assert mock_get.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_router_send_request(router):
+    with patch.object(router, "_get_or_create_session") as mock_get:
+        mock_session = MagicMock()
+        mock_session.send_request = AsyncMock(return_value="res")
+        mock_get.return_value = mock_session
+
+        res = await router.send_request("python", "method", "params", 10.0)
+        assert res == "res"
+        mock_session.send_request.assert_awaited_once_with("method", "params", 10.0)
+
+        mock_session.send_request = AsyncMock(side_effect=[RuntimeError("broken pipe"), "res2"])
+        res2 = await router.send_request("python", "method", "params", 10.0)
+        assert res2 == "res2"
+        assert mock_session.send_request.call_count == 2
+        assert mock_get.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_router_send_notification(router):
+    with patch.object(router, "_get_or_create_session") as mock_get:
+        mock_session = MagicMock()
+        mock_session.send_notification = AsyncMock()
+        mock_get.return_value = mock_session
+
+        await router.send_notification("python", "method", "params")
+        mock_session.send_notification.assert_awaited_once_with("method", "params")
+
+        mock_session.send_notification = AsyncMock(side_effect=[RuntimeError("broken pipe"), None])
+        await router.send_notification("python", "method", "params")
+        assert mock_session.send_notification.call_count == 2
+        assert mock_get.call_count == 3
+
+
+def test_router_get_diagnostics(router):
+    assert router.get_diagnostics("uri", "python") is None
+
+    mock_session = MagicMock()
+    mock_session.get_diagnostics.return_value = ["diag"]
+    router.sessions["python"] = mock_session
+
+    assert router.get_diagnostics("uri", "python") == ["diag"]
+
+
+@pytest.mark.asyncio
+async def test_router_reap_loop_fast():
+    import time
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+
+        router = LSPClient(root_uri="file:///workspace")
+        router.idle_timeout_secs = 0.01
+
+        mock_session = MagicMock()
+        mock_session.last_used = time.monotonic() - 1.0
+        mock_session.stop = AsyncMock()
+        router.sessions["python"] = mock_session
+
+        await router._reap_loop()
+        mock_session.stop.assert_awaited_once()
+        assert "python" not in router.sessions
+
+
+def test_session_is_alive():
+    session = LSPSession(["dummy"])
+    assert session.is_alive() is False
+    from unittest.mock import MagicMock
+
+    session._process = MagicMock()
+    session._process.returncode = None
+    assert session.is_alive() is True
+    session._process.returncode = 0
+    assert session.is_alive() is False
+
+
+@pytest.mark.asyncio
+async def test_router_stop_with_sessions():
+    router = LSPClient()
+    mock_session = AsyncMock()
+    router.sessions["python"] = mock_session
+    await router.stop()
+    mock_session.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_watch_loop():
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("os.walk") as mock_walk,
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        mock_sleep.side_effect = [None, None, asyncio.CancelledError()]
+
+        # mock os.walk to return a file
+        mock_walk.return_value = [("/workspace", [], ["file.py", "ignored.txt", ".git/config"])]
+
+        # mock stat to return an mtime that changes
+        mock_stat_1 = MagicMock(st_mtime_ns=100)
+        mock_stat_2 = MagicMock(st_mtime_ns=200)
+        # 1 call on first sleep, 1 call on second sleep
+        mock_stat.side_effect = [mock_stat_1, mock_stat_2, Exception("stop")]
+
+        router = LSPClient(root_uri="file:///workspace")
+        mock_session = AsyncMock()
+        router.sessions["python"] = mock_session
+
+        await router._watch_loop()
+
+        # Should have sent didChangeWatchedFiles
+        mock_session.send_notification.assert_called_with(
+            "workspace/didChangeWatchedFiles",
+            {"changes": [{"uri": "file:///workspace/file.py", "type": 2}]},
+        )
+
+
+@pytest.mark.asyncio
+async def test_session_incremental_sync():
+    session = LSPSession(["dummy"])
+    session._sync_kind = 2
+    session.send_notification = AsyncMock()
+
+    # initial sync
+    await session.sync_file("file:///test.py", "python", "a\nb\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didOpen",
+        {
+            "textDocument": {
+                "uri": "file:///test.py",
+                "languageId": "python",
+                "version": 1,
+                "text": "a\nb\n",
+            }
+        },
+    )
+
+    # second sync with change
+    await session.sync_file("file:///test.py", "python", "a\nc\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didChange",
+        {
+            "textDocument": {"uri": "file:///test.py", "version": 2},
+            "contentChanges": [
+                {
+                    "range": {
+                        "start": {"line": 1, "character": 0},
+                        "end": {"line": 1, "character": 1},
+                    },
+                    "text": "c\n",
+                }
+            ],
+        },
+    )
+
+    # fallback sync
+    session._sync_kind = 1
+    await session.sync_file("file:///test.py", "python", "a\nd\n")
+    session.send_notification.assert_called_with(
+        "textDocument/didChange",
+        {
+            "textDocument": {"uri": "file:///test.py", "version": 3},
+            "contentChanges": [{"text": "a\nd\n"}],
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_initialize_sync_kind():
+    session = LSPSession(["dummy"])
+    session.send_request = AsyncMock(
+        return_value={"capabilities": {"textDocumentSync": {"change": 2}}}
+    )
+    session.send_notification = AsyncMock()
+
+    await session.initialize("file:///test")
+    assert session._sync_kind == 2
+
+    session.send_request = AsyncMock(return_value={"capabilities": {"textDocumentSync": 1}})
+    await session.initialize("file:///test")
+    assert session._sync_kind == 1
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_skips_git():
+    client = LSPClient("file:///workspace")
+    mock_session = AsyncMock()
+    client.sessions["python"] = mock_session
+
+    with (
+        patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("os.walk", return_value=[("/workspace/.git", [], ["test.py"])]),
+    ):
+        await client._watch_loop()
+        mock_session.send_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_no_sessions():
+    client = LSPClient("file:///workspace")
+    with (
+        patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        await client._watch_loop()
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_not_file_uri():
+    client = LSPClient("http:///workspace")
+    await client._watch_loop()
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_stat_fails():
+    client = LSPClient("file:///workspace")
+    mock_session = AsyncMock()
+    client.sessions["python"] = mock_session
+
+    def stat_fail(*args, **kwargs):
+        raise OSError("Stat failed")
+
+    with (
+        patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+        patch("os.walk", return_value=[("/workspace", [], ["test.py"])]),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat", side_effect=stat_fail),
+    ):
+        await client._watch_loop()
+        mock_session.send_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_send_fails():
+    client = LSPClient("file:///workspace")
+    mock_session = AsyncMock()
+    client.sessions["python"] = mock_session
+
+    # Change to trigger notification
+    mock_stat1 = MagicMock()
+    mock_stat1.st_mtime_ns = 100
+    mock_stat2 = MagicMock()
+    mock_stat2.st_mtime_ns = 200
+
+    mock_session.send_notification.side_effect = Exception("Send failed")
+
+    with (
+        patch("asyncio.sleep", side_effect=[None, None, asyncio.CancelledError()]),
+        patch("os.walk", return_value=[("/workspace", [], ["test.py"])]),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat", side_effect=[mock_stat1, mock_stat2, mock_stat2]),
+    ):
+        await client._watch_loop()
+        assert mock_session.send_notification.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_watch_loop_create_delete():
+    client = LSPClient("file:///workspace")
+    mock_session = AsyncMock()
+    client.sessions["python"] = mock_session
+
+    mock_stat1 = MagicMock()
+    mock_stat1.st_mtime_ns = 100
+    mock_stat2 = MagicMock()
+    mock_stat2.st_mtime_ns = 200
+
+    def mock_walk_pass1(*args, **kwargs):
+        return [("/workspace", [], ["test.py"])]
+
+    def mock_walk_pass2(*args, **kwargs):
+        return [("/workspace", [], ["test.py", "new.py"])]
+
+    def mock_walk_pass3(*args, **kwargs):
+        return [("/workspace", [], ["new.py"])]  # test.py deleted
+
+    with (
+        patch("asyncio.sleep", side_effect=[None, None, None, asyncio.CancelledError()]),
+        patch("os.walk", side_effect=[mock_walk_pass1(), mock_walk_pass2(), mock_walk_pass3()]),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat", return_value=mock_stat1),
+    ):
+        await client._watch_loop()
+        # Pass 1: populate last_mtimes
+        # Pass 2: new.py created (type 1)
+        # Pass 3: test.py deleted (type 3)
+        assert mock_session.send_notification.call_count == 2
+        calls = mock_session.send_notification.call_args_list
+        assert "type': 1" in str(calls[0])
+        assert "type': 3" in str(calls[1])
+
+
+@pytest.mark.asyncio
+async def test_sync_file_incremental_diff_branches():
+    session = LSPSession(["dummy"])
+    session.send_notification = AsyncMock()
+    session._sync_kind = 2  # Incremental
+
+    # 1. No change
+    await session.sync_file("file:///test.py", "python", "test")
+    await session.sync_file("file:///test.py", "python", "test")
+    session.send_notification.assert_called_once()  # Only the first one (didOpen)
+    session.send_notification.reset_mock()
+
+    # 2. i2 < len(old_lines)
+    await session.sync_file("file:///test.py", "python", "test\nnew_line\n")
+    session.send_notification.assert_called_once()
+    session.send_notification.reset_mock()
+
+    # 3. i2 < len(old_lines)
+    session._document_texts["file:///test.py"] = "line1\nline2\nline3\n"
+    session._document_versions["file:///test.py"] = 2
+    await session.sync_file("file:///test.py", "python", "line1\nline2_changed\nline3\n")
+    session.send_notification.assert_called_once()
+    session.send_notification.reset_mock()
+
+    # 4. empty old_lines
+    session._document_texts["file:///test2.py"] = ""
+    session._document_versions["file:///test2.py"] = 1
+    await session.sync_file("file:///test2.py", "python", "test\n")
+    session.send_notification.assert_called_once()

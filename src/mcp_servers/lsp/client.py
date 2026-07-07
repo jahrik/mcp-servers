@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ class LSPError(Exception):
         super().__init__(f"LSP Error {code}: {message}")
 
 
-class LSPClient:
+class LSPSession:
     """A client for managing the lifecycle and JSON-RPC transport to a language server subprocess."""
 
     def __init__(self, command: list[str]) -> None:
@@ -29,7 +30,13 @@ class LSPClient:
         self._read_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._document_versions: dict[str, int] = {}
+        self._document_texts: dict[str, str] = {}
+        self._sync_kind: int = 1  # 1 = Full, 2 = Incremental
         self._diagnostics: dict[str, list[Any]] = {}
+        self.last_used = time.monotonic()
+
+    def update_activity(self):
+        self.last_used = time.monotonic()
 
     async def start(self) -> None:
         """Start the LSP subprocess."""
@@ -47,6 +54,7 @@ class LSPClient:
         # Start background tasks for reading stdout and stderr
         self._read_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._stderr_loop())
+        self.update_activity()
 
     async def stop(self) -> None:
         """Stop the LSP subprocess."""
@@ -81,6 +89,7 @@ class LSPClient:
         self._process = None
         self._pending_requests.clear()
         self._document_versions.clear()
+        self._document_texts.clear()
         self._diagnostics.clear()
         logger.info("Stopped LSP process.")
 
@@ -144,12 +153,13 @@ class LSPClient:
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                logger.warning(f"LSP STDERR: {line.decode('utf-8').strip()}")
+                logger.info(f"LSP STDERR: {line.decode('utf-8').strip()}")
         except asyncio.CancelledError:
             pass
 
     def _handle_payload(self, payload: dict[str, Any]) -> None:
         """Handle an incoming JSON-RPC payload."""
+        self.update_activity()
         if "id" in payload and ("result" in payload or "error" in payload):
             # It's a response
             req_id = payload["id"]
@@ -213,6 +223,7 @@ class LSPClient:
         self, method: str, params: Any = None, timeout: float | None = 10.0
     ) -> Any:
         """Send a JSON-RPC request and wait for the response."""
+        self.update_activity()
         self._request_id += 1
         req_id = self._request_id
 
@@ -238,6 +249,7 @@ class LSPClient:
 
     async def send_notification(self, method: str, params: Any = None) -> None:
         """Send a JSON-RPC notification (no response expected)."""
+        self.update_activity()
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -271,18 +283,33 @@ class LSPClient:
                     "definition": {"dynamicRegistration": False},
                     "references": {"dynamicRegistration": False},
                     "documentSymbol": {"dynamicRegistration": False},
+                    "callHierarchy": {"dynamicRegistration": False},
+                    "typeDefinition": {"dynamicRegistration": False},
+                    "implementation": {"dynamicRegistration": False},
+                    "documentHighlight": {"dynamicRegistration": False},
                 },
             },
         }
 
         result = await self.send_request("initialize", params, timeout=15.0)
+
+        # Parse sync kind
+        if result and "capabilities" in result:
+            sync = result["capabilities"].get("textDocumentSync")
+            if isinstance(sync, dict):
+                self._sync_kind = sync.get("change", 1)
+            elif isinstance(sync, int):
+                self._sync_kind = sync
+
         await self.send_notification("initialized", {})
         return result
 
     async def sync_file(self, uri: str, language_id: str, text: str) -> None:
         """Synchronize the file content with the language server via didOpen/didChange."""
+        self.update_activity()
         if uri not in self._document_versions:
             self._document_versions[uri] = 1
+            self._document_texts[uri] = text
             await self.send_notification(
                 "textDocument/didOpen",
                 {
@@ -295,15 +322,261 @@ class LSPClient:
                 },
             )
         else:
+            old_text = self._document_texts.get(uri, "")
+            if old_text == text:
+                return
+
             self._document_versions[uri] += 1
+            self._document_texts[uri] = text
+
+            content_changes = []
+            if self._sync_kind == 2:
+                import difflib
+
+                old_lines = old_text.splitlines(keepends=True)
+                new_lines = text.splitlines(keepends=True)
+                sm = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+                for tag, i1, i2, j1, j2 in sm.get_opcodes():
+                    if tag == "equal":
+                        continue
+
+                    start_pos = {"line": i1, "character": 0}
+                    if i2 < len(old_lines):
+                        end_pos = {"line": i2, "character": 0}
+                    else:
+                        if old_lines:
+                            end_pos = {
+                                "line": i2 - 1,
+                                "character": len(old_lines[-1].rstrip("\r\n")),
+                            }
+                        else:
+                            end_pos = {"line": 0, "character": 0}
+
+                    content_changes.append(
+                        {
+                            "range": {"start": start_pos, "end": end_pos},
+                            "text": "".join(new_lines[j1:j2]),
+                        }
+                    )
+                # Reverse to avoid line number shifting during sequential application
+                content_changes.reverse()
+            else:
+                content_changes = [{"text": text}]
+
             await self.send_notification(
                 "textDocument/didChange",
                 {
                     "textDocument": {"uri": uri, "version": self._document_versions[uri]},
-                    "contentChanges": [{"text": text}],
+                    "contentChanges": content_changes,
                 },
             )
 
     def get_diagnostics(self, uri: str) -> list[Any] | None:
         """Return the most recently received diagnostics for a URI, or None if not yet received."""
         return self._diagnostics.get(uri)
+
+    def is_alive(self) -> bool:
+        return self._process is not None and self._process.returncode is None
+
+
+class LSPClient:
+    """A routing client that manages multiple LSPSessions based on language."""
+
+    def __init__(self, root_uri: str = "") -> None:
+        self.root_uri = root_uri
+        self.sessions: dict[str, LSPSession] = {}
+        self.language_commands = {
+            "python": ["pyright-langserver", "--stdio"],
+            "go": ["gopls"],
+            "rust": ["rust-analyzer"],
+            "typescript": ["typescript-language-server", "--stdio"],
+            "javascript": ["typescript-language-server", "--stdio"],
+        }
+        self.idle_timeout_secs = 600.0  # 10 minutes
+        self._reap_task: asyncio.Task[None] | None = None
+        self._watch_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """Start the reaping task and watcher task."""
+        if not self._reap_task:
+            self._reap_task = asyncio.create_task(self._reap_loop())
+        if not self._watch_task:
+            self._watch_task = asyncio.create_task(self._watch_loop())
+
+    async def stop(self) -> None:
+        """Stop all sessions and the reap task."""
+        import contextlib
+
+        if self._reap_task:
+            self._reap_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reap_task
+            self._reap_task = None
+        if self._watch_task:
+            self._watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watch_task
+            self._watch_task = None
+
+        for session in list(self.sessions.values()):
+            await session.stop()
+        self.sessions.clear()
+
+    async def initialize(self, root_uri: str) -> Any:
+        """Store the root URI to initialize spawned sessions."""
+        self.root_uri = root_uri
+        return {"capabilities": {}}
+
+    async def _get_or_create_session(self, language_id: str) -> LSPSession:
+        if language_id in self.sessions:
+            session = self.sessions[language_id]
+            if session.is_alive():
+                return session
+            # If it crashed, remove it and we will recreate
+            logger.warning(f"LSP session for {language_id} crashed. Restarting...")
+            await session.stop()
+            del self.sessions[language_id]
+
+        if language_id not in self.language_commands:
+            raise ValueError(f"Unsupported language: {language_id}")
+
+        cmd = self.language_commands[language_id]
+        import os
+        import shlex
+
+        if language_id == "python":
+            cmd = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
+
+        session = LSPSession(cmd)
+        await session.start()
+        if self.root_uri:
+            try:
+                await session.initialize(self.root_uri)
+            except Exception as e:
+                logger.error(f"Failed to initialize LSP for {language_id}: {e}")
+                await session.stop()
+                raise
+
+        self.sessions[language_id] = session
+        return session
+
+    async def _reap_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(60)
+                now = time.monotonic()
+                to_remove = []
+                for lang, session in list(self.sessions.items()):
+                    if now - session.last_used > self.idle_timeout_secs:
+                        logger.info(f"Reaping idle LSP session for {lang}")
+                        to_remove.append((lang, session))
+                for lang, session in to_remove:
+                    await session.stop()
+                    self.sessions.pop(lang, None)
+        except asyncio.CancelledError:
+            pass
+
+    async def _watch_loop(self) -> None:
+        """Background task to poll for workspace file changes and send didChangeWatchedFiles."""
+        import os
+        from pathlib import Path
+        from urllib.parse import unquote
+
+        if not self.root_uri.startswith("file://"):
+            return
+
+        root_path = Path(unquote(self.root_uri[7:]))
+        if not root_path.exists():
+            return
+
+        extensions = {".py", ".go", ".rs", ".ts", ".tsx", ".js", ".jsx"}
+        last_mtimes: dict[str, float] = {}
+        is_first_pass = True
+
+        try:
+            while True:
+                await asyncio.sleep(5)
+                if not self.sessions:
+                    continue
+
+                changes = []
+                current_pass_uris = set()
+                for root, _, files in os.walk(root_path):
+                    if (
+                        ".git" in root
+                        or "__pycache__" in root
+                        or "node_modules" in root
+                        or ".venv" in root
+                    ):
+                        continue
+
+                    for f in files:
+                        if any(f.endswith(ext) for ext in extensions):
+                            path = Path(root) / f
+                            try:
+                                mtime = path.stat().st_mtime_ns
+                                uri = path.as_uri()
+                                current_pass_uris.add(uri)
+                                old_mtime = last_mtimes.get(uri)
+                                if old_mtime is None:
+                                    last_mtimes[uri] = mtime
+                                    if not is_first_pass:
+                                        changes.append({"uri": uri, "type": 1})  # 1 = Created
+                                elif mtime > old_mtime:
+                                    last_mtimes[uri] = mtime
+                                    changes.append({"uri": uri, "type": 2})  # 2 = Changed
+                            except Exception:
+                                pass
+
+                if not is_first_pass:
+                    for uri in list(last_mtimes.keys()):
+                        if uri not in current_pass_uris:
+                            del last_mtimes[uri]
+                            changes.append({"uri": uri, "type": 3})  # 3 = Deleted
+
+                is_first_pass = False
+
+                if changes:
+                    for lang, session in list(self.sessions.items()):
+                        try:
+                            await session.send_notification(
+                                "workspace/didChangeWatchedFiles", {"changes": changes}
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send didChangeWatchedFiles to {lang}: {e}")
+        except asyncio.CancelledError:
+            pass
+
+    async def sync_file(self, uri: str, language_id: str, text: str) -> None:
+        """Synchronize file with the correct language server, with retry logic."""
+        session = await self._get_or_create_session(language_id)
+        try:
+            await session.sync_file(uri, language_id, text)
+        except RuntimeError:
+            # Maybe broken pipe, retry once
+            session = await self._get_or_create_session(language_id)
+            await session.sync_file(uri, language_id, text)
+
+    async def send_request(
+        self, language_id: str, method: str, params: Any = None, timeout: float | None = 10.0
+    ) -> Any:
+        session = await self._get_or_create_session(language_id)
+        try:
+            return await session.send_request(method, params, timeout)
+        except RuntimeError:
+            session = await self._get_or_create_session(language_id)
+            return await session.send_request(method, params, timeout)
+
+    async def send_notification(self, language_id: str, method: str, params: Any = None) -> None:
+        session = await self._get_or_create_session(language_id)
+        try:
+            await session.send_notification(method, params)
+        except RuntimeError:
+            session = await self._get_or_create_session(language_id)
+            await session.send_notification(method, params)
+
+    def get_diagnostics(self, uri: str, language_id: str) -> list[Any] | None:
+        if language_id in self.sessions:
+            return self.sessions[language_id].get_diagnostics(uri)
+        return None
