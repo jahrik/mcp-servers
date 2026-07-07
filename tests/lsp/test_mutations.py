@@ -28,6 +28,7 @@ def test_apply_workspace_edit_changes():
     with (
         patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
@@ -59,6 +60,7 @@ def test_apply_workspace_edit_document_changes():
 
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
@@ -108,6 +110,7 @@ async def test_lsp_rename_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
@@ -154,6 +157,7 @@ async def test_lsp_rename_no_edits():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
@@ -180,6 +184,7 @@ async def test_cancelled_errors():
     with (
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=asyncio.CancelledError()),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
     ):
@@ -232,6 +237,7 @@ def test_apply_workspace_edit_append():
     with (
         patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
@@ -258,6 +264,7 @@ def test_apply_workspace_edit_multiline_out_of_bounds():
     with (
         patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
@@ -271,6 +278,7 @@ async def test_lsp_rename_error():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),
@@ -284,6 +292,7 @@ async def test_lsp_code_actions_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
@@ -316,6 +325,7 @@ async def test_lsp_code_actions_none():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
@@ -333,6 +343,7 @@ async def test_lsp_code_actions_error():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
         patch("pathlib.Path.relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),

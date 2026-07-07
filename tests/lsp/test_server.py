@@ -64,7 +64,10 @@ async def test_lsp_hover_not_found():
 @pytest.mark.asyncio
 async def test_lsp_hover_line_too_small():
     ctx = MagicMock()
-    with patch("pathlib.Path.exists", return_value=True):
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+    ):
         res = await lsp_hover("/tmp/file.py", 0, 1, ctx)
         assert "line must be >= 1 and char must be >= 0" in res
 
@@ -74,6 +77,7 @@ async def test_lsp_hover_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -108,6 +112,7 @@ async def test_lsp_hover_empty_response():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -123,6 +128,7 @@ async def test_lsp_hover_list_response():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -140,6 +146,7 @@ async def test_lsp_hover_string_response():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -155,6 +162,7 @@ async def test_lsp_hover_error():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -171,6 +179,7 @@ async def test_lsp_hover_cancelled():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -199,6 +208,7 @@ async def test_lsp_definition_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -214,6 +224,7 @@ async def test_lsp_references_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -229,6 +240,7 @@ async def test_lsp_document_symbols_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -237,6 +249,43 @@ async def test_lsp_document_symbols_success():
 
         res = await lsp_document_symbols("/path/to/file.py", ctx)
         assert "foo" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_full_detail():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
+
+        res = await lsp_document_symbols("/path/to/file.py", ctx, detail="full")
+        assert '"kind": 12' in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_document_symbols("/path/to/file.py", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_workspace_symbols("foo", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
 
 
 def test_format_location():
@@ -271,6 +320,7 @@ def test_format_location():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
             patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
@@ -292,6 +342,7 @@ def test_lsp_definition_string_fallback():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
             patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
@@ -313,6 +364,7 @@ def test_lsp_references_string_fallback():
         ctx = MagicMock()
         with (
             patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
             patch("builtins.open", mock_open(read_data="def foo(): pass")),
             patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         ):
@@ -329,6 +381,7 @@ async def test_lsp_diagnostics_with_items():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -344,6 +397,7 @@ async def test_lsp_diagnostics_empty():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -366,10 +420,22 @@ async def test_lsp_workspace_symbols_success():
 
 
 @pytest.mark.asyncio
+async def test_lsp_workspace_symbols_full_detail():
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock()}
+        mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
+
+        res = await lsp_workspace_symbols("foo", ctx, detail="full")
+        assert '"kind": 12' in res
+
+
+@pytest.mark.asyncio
 async def test_lsp_diagnostics_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -422,6 +488,7 @@ async def test_lsp_tools_cancelled(tool_func, args):
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -450,6 +517,7 @@ async def test_lsp_tools_exception(tool_func, args):
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -473,7 +541,10 @@ async def test_lsp_tools_exception(tool_func, args):
 )
 async def test_lsp_tools_invalid_line_char(tool_func):
     ctx = MagicMock()
-    with patch("pathlib.Path.exists", return_value=True):
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+    ):
         res = await tool_func("/path/to/file.py", 0, 0, ctx)
         assert "line must be >= 1" in res
 
@@ -497,6 +568,7 @@ async def test_lsp_tools_no_response(tool_func, args):
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -520,6 +592,7 @@ async def test_lsp_call_hierarchy_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -536,10 +609,32 @@ async def test_lsp_call_hierarchy_success():
 
 
 @pytest.mark.asyncio
+async def test_lsp_call_hierarchy_full_detail():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            side_effect=[
+                [{"name": "foo"}],
+                [{"from": {"name": "bar"}}],
+            ]
+        )
+
+        res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx, detail="full")
+        assert '"from"' in res
+
+
+@pytest.mark.asyncio
 async def test_lsp_call_hierarchy_no_calls():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -560,6 +655,7 @@ async def test_lsp_call_hierarchy_no_items():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -575,6 +671,7 @@ async def test_lsp_type_definition_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -590,6 +687,7 @@ async def test_lsp_type_definition_list_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -611,6 +709,7 @@ async def test_lsp_implementation_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -626,6 +725,7 @@ async def test_lsp_implementation_list_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -641,6 +741,7 @@ async def test_lsp_document_highlight_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -656,6 +757,7 @@ async def test_lsp_type_definition_string_fallback():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -670,6 +772,7 @@ async def test_lsp_implementation_string_fallback():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("builtins.open", mock_open(read_data="def foo(): pass")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -682,7 +785,10 @@ async def test_lsp_implementation_string_fallback():
 @pytest.mark.asyncio
 async def test_lsp_call_hierarchy_invalid_line_char():
     ctx = MagicMock()
-    with patch("pathlib.Path.exists", return_value=True):
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+    ):
         res = await lsp_call_hierarchy("/path/to/file.py", 0, 0, "incoming", ctx)
         assert "line must be >= 1" in res
 

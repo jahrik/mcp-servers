@@ -603,6 +603,7 @@ async def test_router_watch_loop():
         patch("os.walk") as mock_walk,
         patch("pathlib.Path.stat") as mock_stat,
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
     ):
         mock_sleep.side_effect = [None, None, asyncio.CancelledError()]
 
@@ -703,6 +704,7 @@ async def test_watch_loop_skips_git():
     with (
         patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("os.walk", return_value=[("/workspace/.git", [], ["test.py"])]),
     ):
         await client._watch_loop()
@@ -715,6 +717,7 @@ async def test_watch_loop_no_sessions():
     with (
         patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
     ):
         await client._watch_loop()
 
@@ -738,6 +741,7 @@ async def test_watch_loop_stat_fails():
         patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
         patch("os.walk", return_value=[("/workspace", [], ["test.py"])]),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.stat", side_effect=stat_fail),
     ):
         await client._watch_loop()
@@ -762,6 +766,7 @@ async def test_watch_loop_send_fails():
         patch("asyncio.sleep", side_effect=[None, None, asyncio.CancelledError()]),
         patch("os.walk", return_value=[("/workspace", [], ["test.py"])]),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.stat", side_effect=[mock_stat1, mock_stat2, mock_stat2]),
     ):
         await client._watch_loop()
@@ -792,6 +797,7 @@ async def test_watch_loop_create_delete():
         patch("asyncio.sleep", side_effect=[None, None, None, asyncio.CancelledError()]),
         patch("os.walk", side_effect=[mock_walk_pass1(), mock_walk_pass2(), mock_walk_pass3()]),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
         patch("pathlib.Path.stat", return_value=mock_stat1),
     ):
         await client._watch_loop()

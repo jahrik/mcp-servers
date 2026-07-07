@@ -212,7 +212,7 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
 
 
 async def lsp_call_hierarchy(
-    filepath: str, line: int, char: int, direction: str, ctx: Context
+    filepath: str, line: int, char: int, direction: str, ctx: Context, *, detail: str = "compact"
 ) -> str:
     """Trace who calls a function, or what it calls (IDE call hierarchy).
 
@@ -225,9 +225,14 @@ async def lsp_call_hierarchy(
         line: 1-indexed line number.
         char: 0-indexed character position.
         direction: "incoming" or "outgoing"
+        detail: "compact" (default) for one `Kind name  path:line` line per
+            call; "full" for the raw LSP JSON.
     """
     if direction not in ("incoming", "outgoing"):
         return "Error: direction must be 'incoming' or 'outgoing'"
+
+    if detail not in ("compact", "full"):
+        return "Error: detail must be 'compact' or 'full'"
 
     filepath_obj = utils._prepare_file(filepath)
     if isinstance(filepath_obj, str):
@@ -263,9 +268,16 @@ async def lsp_call_hierarchy(
         if not all_calls:
             return f"No {direction} calls found."
 
-        import json
+        if detail == "full":
+            import json
 
-        return json.dumps(all_calls, indent=2)
+            return json.dumps(all_calls, indent=2)
+
+        # Each call is {from|to: CallHierarchyItem, fromRanges: [...]}; unwrap
+        # to the item and format compactly.
+        key = "from" if direction == "incoming" else "to"
+        items = [call[key] for call in all_calls if isinstance(call, dict) and key in call]
+        return "\n".join(utils._format_symbols(items))
     except asyncio.CancelledError:
         raise
     except Exception as e:

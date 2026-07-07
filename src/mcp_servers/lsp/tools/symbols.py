@@ -7,15 +7,20 @@ from mcp.server.fastmcp import Context
 from mcp_servers.lsp import utils
 
 
-async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
+async def lsp_document_symbols(filepath: str, ctx: Context, *, detail: str = "compact") -> str:
     """Outline all symbols (classes, functions, methods, ...) in a file (IDE document outline).
 
     Prefer over grepping for `def`/`class` to map a file's structure: returns
-    each symbol's kind, range, and nesting.
+    each symbol's kind, position, and nesting.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
+        detail: "compact" (default) for one `Kind name  path:line` line per
+            symbol, indented by nesting; "full" for the raw LSP JSON.
     """
+    if detail not in ("compact", "full"):
+        return "Error: detail must be 'compact' or 'full'"
+
     filepath_obj = utils._prepare_file(filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
@@ -29,16 +34,19 @@ async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
         if not response:
             return "No symbols found in this document."
 
-        import json
+        if detail == "full":
+            import json
 
-        return json.dumps(response, indent=2)
+            return json.dumps(response, indent=2)
+
+        return "\n".join(utils._format_symbols(response))
     except asyncio.CancelledError:
         raise
     except Exception as e:
         return f"Error querying LSP: {e}"
 
 
-async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
+async def lsp_workspace_symbols(query: str, ctx: Context, *, detail: str = "compact") -> str:
     """Find where a symbol is defined anywhere in the project (IDE symbol search / go-to-symbol).
 
     Prefer over grep to locate a class/function by name: it matches
@@ -47,7 +55,12 @@ async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
 
     Args:
         query: The symbol name or partial name to search for.
+        detail: "compact" (default) for one `Kind name  path:line` line per
+            match, grouped by language; "full" for the raw LSP JSON.
     """
+    if detail not in ("compact", "full"):
+        return "Error: detail must be 'compact' or 'full'"
+
     try:
         params = {"query": query}
         results = []
@@ -71,9 +84,17 @@ async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
         if not results:
             return f"No workspace symbols found matching query '{query}'."
 
-        import json
+        if detail == "full":
+            import json
 
-        return json.dumps(results, indent=2)
+            return json.dumps(results, indent=2)
+
+        lines: list[str] = []
+        for group in results:
+            for lang, symbols in group.items():
+                lines.append(f"# {lang}")
+                lines.extend(utils._format_symbols(symbols))
+        return "\n".join(lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:
