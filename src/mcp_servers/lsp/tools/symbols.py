@@ -58,7 +58,7 @@ async def lsp_document_symbols(
             return json.dumps(filtered_response, indent=2)
 
         formatted_lines = utils._format_symbols(filtered_response)
-        return utils._cap_and_spill(filtered_response, formatted_lines)
+        return utils._cap_and_spill(response, filtered_response, formatted_lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -116,10 +116,12 @@ async def lsp_workspace_symbols(
         # Filter results
         filtered_results = []
         merged_results_for_spill = []
+        merged_filtered_symbols = []
         lines: list[str] = []
 
         for group in results:
             for lang, symbols in group.items():
+                merged_results_for_spill.extend(symbols)
                 filtered = (
                     utils._filter_symbols(symbols, kinds, top_level)
                     if (kinds is not None or top_level)
@@ -127,7 +129,7 @@ async def lsp_workspace_symbols(
                 )
                 if filtered:
                     filtered_results.append({lang: filtered})
-                    merged_results_for_spill.extend(filtered)
+                    merged_filtered_symbols.extend(filtered)
                     lang_lines = utils._format_symbols(filtered)
                     if lang_lines:
                         lines.append(f"# {lang}")
@@ -143,7 +145,7 @@ async def lsp_workspace_symbols(
 
             return json.dumps(filtered_results, indent=2)
 
-        return utils._cap_and_spill(merged_results_for_spill, lines)
+        return utils._cap_and_spill(merged_results_for_spill, merged_filtered_symbols, lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:

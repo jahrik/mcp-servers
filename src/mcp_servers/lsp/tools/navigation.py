@@ -82,7 +82,7 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
             return utils._format_location(response)
         elif isinstance(response, list):
             formatted_lines = [utils._format_location(loc) for loc in response]
-            return utils._cap_and_spill(response, formatted_lines)
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -122,7 +122,7 @@ async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context)
             return utils._format_location(response)
         elif isinstance(response, list):
             formatted_lines = [utils._format_location(loc) for loc in response]
-            return utils._cap_and_spill(response, formatted_lines)
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -163,7 +163,7 @@ async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) 
             return utils._format_location(response)
         elif isinstance(response, list):
             formatted_lines = [utils._format_location(loc) for loc in response]
-            return utils._cap_and_spill(response, formatted_lines)
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -206,7 +206,7 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
 
         if isinstance(response, list):
             formatted_lines = [utils._format_location(loc) for loc in response]
-            return utils._cap_and_spill(response, formatted_lines)
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -282,7 +282,7 @@ async def lsp_call_hierarchy(
         key = "from" if direction == "incoming" else "to"
         items = [call[key] for call in all_calls if isinstance(call, dict) and key in call]
         formatted_lines = utils._format_symbols(items)
-        return utils._cap_and_spill(all_calls, formatted_lines)
+        return utils._cap_and_spill(all_calls, all_calls, formatted_lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:

@@ -295,13 +295,15 @@ def test_filter_symbols():
 def test_cap_and_spill():
     # Under limit
     lines = ["a", "b"]
-    res = utils._cap_and_spill([{"name": "a"}, {"name": "b"}], lines, max_n=5)
+    res = utils._cap_and_spill(
+        [{"name": "a"}, {"name": "b"}], [{"name": "a"}, {"name": "b"}], lines, max_n=5
+    )
     assert res == "a\nb"
 
     # Over limit
     results = [{"name": f"item{i}"} for i in range(10)]
     formatted = [f"item{i}" for i in range(10)]
-    res_spill = utils._cap_and_spill(results, formatted, max_n=3)
+    res_spill = utils._cap_and_spill(results, results, formatted, max_n=3)
     assert "item0" in res_spill
     assert "item1" in res_spill
     assert "item2" in res_spill
@@ -317,7 +319,16 @@ def test_cap_and_spill():
     assert match is not None
     assert "\\" not in match.group(1)
 
+    # Over limit with header lines (which do not count toward max_n)
+    res_hdr = utils._cap_and_spill(
+        results, results, ["# header1", "item0", "item1", "# header2", "item2"], max_n=3
+    )
+    assert "# header1" in res_hdr
+    assert "# header2" in res_hdr
+    assert "item2" in res_hdr
+    assert "... 7 more" in res_hdr
+
     # Spill exception handling (covers lines 285-287)
     with patch("tempfile.NamedTemporaryFile", side_effect=Exception("spill error")):
-        res_err = utils._cap_and_spill(results, formatted, max_n=3)
+        res_err = utils._cap_and_spill(results, results, formatted, max_n=3)
         assert "[Error: Failed to write full spill file: spill error]" in res_err

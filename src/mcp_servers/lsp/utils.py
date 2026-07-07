@@ -220,6 +220,7 @@ def _format_symbols(symbols: list, indent: int = 0) -> list[str]:
 def _filter_symbols(symbols: list, kinds: list[str] | None = None, top_level: bool = False) -> list:
     """Filter list of LSP symbols by kind and/or top-level constraint."""
     filtered = []
+    kinds_lower = [k.lower() for k in kinds] if kinds is not None else None
     for sym in symbols:
         if not isinstance(sym, dict):
             continue
@@ -232,8 +233,7 @@ def _filter_symbols(symbols: list, kinds: list[str] | None = None, top_level: bo
 
         # Check if it matches kinds
         matches_kind = True
-        if kinds is not None:
-            kinds_lower = [k.lower() for k in kinds]
+        if kinds_lower is not None:
             matches_kind = kind_name.lower() in kinds_lower
 
         if matches_kind:
@@ -251,21 +251,25 @@ def _filter_symbols(symbols: list, kinds: list[str] | None = None, top_level: bo
     return filtered
 
 
-def _cap_and_spill(results: list, formatted_lines: list[str], max_n: int = 100) -> str:
-    """Limit the returned lines to max_n, and spill the full results payload to a JSONL file."""
+def _cap_and_spill(
+    raw_results: list,
+    display_items: list,
+    formatted_lines: list[str],
+    max_n: int = 100,
+) -> str:
+    """Limit the returned lines to max_n, and spill the full results payload to a JSONL file.
+
+    Both the capping decision and the 'more' count are driven by the number of display items.
+    """
     import getpass
     import logging
     import tempfile
 
-    total_count = len(formatted_lines)
-    if total_count <= max_n:
+    total_items = len(display_items)
+    if total_items <= max_n:
         return "\n".join(formatted_lines)
 
-    capped_lines = formatted_lines[:max_n]
-    capped_lines.append(
-        f"... {total_count - max_n} more (narrow with kinds/top_level or query the full spill file)"
-    )
-
+    # We need to spill. Let's write the full raw_results payload.
     try:
         import json
 
@@ -276,17 +280,41 @@ def _cap_and_spill(results: list, formatted_lines: list[str], max_n: int = 100) 
         with tempfile.NamedTemporaryFile(
             suffix=".jsonl", dir=spill_dir, delete=False, mode="w", encoding="utf-8"
         ) as f:
-            for item in results:
+            for item in raw_results:
                 f.write(json.dumps(item) + "\n")
             spill_path = f.name
 
+        kept_lines = []
+        item_count = 0
+        for line in formatted_lines:
+            if item_count >= max_n:
+                break
+            kept_lines.append(line)
+            # Lines starting with "# " are headers (e.g. language name in workspace symbols)
+            # and do not correspond to individual symbol items.
+            if not line.startswith("# "):
+                item_count += 1
+
+        more_count = total_items - max_n
+        kept_lines.append(
+            f"... {more_count} more (narrow with kinds/top_level or query the full spill file)"
+        )
+
         posix_spill_path = Path(spill_path).as_posix()
-        capped_lines.append(
+        kept_lines.append(
             f"\n[Spilled full results to: {spill_path} (query with data MCP server: "
             f"duckdb_query(query=\"SELECT * FROM read_json_auto('{posix_spill_path}')\"))]"
         )
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to spill results to file: {e}")
-        capped_lines.append(f"\n[Error: Failed to write full spill file: {e}]")
+        kept_lines = []
+        item_count = 0
+        for line in formatted_lines:
+            if item_count >= max_n:
+                break
+            kept_lines.append(line)
+            if not line.startswith("# "):
+                item_count += 1
+        kept_lines.append(f"\n[Error: Failed to write full spill file: {e}]")
 
-    return "\n".join(capped_lines)
+    return "\n".join(kept_lines)
