@@ -202,7 +202,14 @@ class LSPSession:
                     result.append(val)
 
                 response = {"jsonrpc": "2.0", "id": req_id, "result": result}
-                asyncio.create_task(self._send(response))
+
+                async def _send_config_response():
+                    try:
+                        await self._send(response)
+                    except Exception as e:
+                        logger.debug(f"Failed to send workspace/configuration response: {e}")
+
+                asyncio.create_task(_send_config_response())
                 return
 
             if req_id is not None:

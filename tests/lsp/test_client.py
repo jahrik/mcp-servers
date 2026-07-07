@@ -162,7 +162,7 @@ async def test_router_reap_loop_fast():
 
         await router._reap_loop()
         mock_session.stop.assert_awaited_once()
-        assert router.sessions["python"] == [None]
+        assert "python" not in router.sessions
 
 
 @pytest.mark.asyncio

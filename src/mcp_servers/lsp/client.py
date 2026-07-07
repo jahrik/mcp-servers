@@ -114,6 +114,7 @@ class LSPClient:
                 active_sessions.append(session)
 
         if not active_sessions:
+            del self.sessions[language_id]
             raise RuntimeError(f"All configured LSP servers failed to start for {language_id}")
 
         return active_sessions
@@ -131,6 +132,8 @@ class LSPClient:
                             )
                             await session.stop()
                             session_list[idx] = None
+                    if all(s is None for s in session_list):
+                        del self.sessions[lang]
         except asyncio.CancelledError:
             pass
 
@@ -289,16 +292,24 @@ class LSPClient:
                 return await target_session.send_request(method, params, timeout)
 
         # 2. Fan-out for Queries & Navigation
+        session_commands = [s.command for s in active_sessions]
         tasks = [s.send_request(method, params, timeout) for s in active_sessions]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # If any query task returned a RuntimeError (e.g. broken pipe), retry those tasks once
+        # If any query task returned a RuntimeError (e.g. broken pipe), retry by command identity
         if any(isinstance(r, RuntimeError) for r in results):
-            active_sessions = await self._get_or_create_sessions(language_id)
+            refreshed_sessions = await self._get_or_create_sessions(language_id)
+            cmd_to_session = {tuple(s.command): s for s in refreshed_sessions}
             retry_tasks = []
             for idx, r in enumerate(results):
-                if isinstance(r, RuntimeError) and idx < len(active_sessions):
-                    retry_tasks.append(active_sessions[idx].send_request(method, params, timeout))
+                if isinstance(r, RuntimeError):
+                    refreshed = cmd_to_session.get(tuple(session_commands[idx]))
+                    if refreshed:
+                        retry_tasks.append(refreshed.send_request(method, params, timeout))
+                    else:
+                        fut: asyncio.Future[Any] = asyncio.Future()
+                        fut.set_exception(r)
+                        retry_tasks.append(fut)
                 else:
                     fut = asyncio.Future()
                     if isinstance(r, Exception):
