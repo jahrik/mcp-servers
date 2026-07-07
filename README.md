@@ -16,7 +16,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 | `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
 | `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
-| `lsp`        | `mcp-lsp`        | Language Server Protocol (LSP) proxy                                     |
+| `lsp`        | `mcp-lsp`        | Multi-language LSP router: semantic navigation, symbols, diagnostics, refactors |
 
 ### `github`
 
@@ -63,15 +63,32 @@ Asynchronous agent-to-agent task delegation and orchestration. Lets agents spawn
 
 ### `lsp`
 
-Language Server Protocol (LSP) proxy. Lets agents query a language server (e.g. `pyright`) for type signatures and documentation without managing the LSP lifecycle themselves.
+Language Server Protocol (LSP) router. Fronts real language servers (`pyright`, `gopls`, `rust-analyzer`, `typescript-language-server`), spawning one per language on demand, so agents get IDE-grade semantic answers — definitions, references, types, call flow, renames — without managing JSON-RPC lifecycles or document syncing. Prefer these over grep for anything semantic.
 
 **Tools:**
-- `lsp_hover` — Get the type signature and docstring for the symbol at a given file and position.
-- `lsp_definition` — Jump directly to the exact file and line where a symbol is defined.
-- `lsp_references` — Find every place in the codebase where a function or variable is used.
-- `lsp_document_symbols` — Return a structured list of all classes, methods, and functions in a specific file.
-- `lsp_workspace_symbols` — Search the entire project for a specific function or class name.
-- `lsp_diagnostics` — Return any syntax errors or type-checking warnings for a file.
+
+_Navigation (by file position):_
+- `lsp_hover` — Type signature and docstring for the symbol at a position.
+- `lsp_definition` — Go-to-definition; the true source location, resolving imports and aliases.
+- `lsp_type_definition` — Jump to the definition of a value's *type*.
+- `lsp_implementation` — Concrete implementations of an interface/abstract symbol.
+- `lsp_references` — Every semantic use of a symbol across the project.
+- `lsp_call_hierarchy` — Trace `incoming` callers or `outgoing` callees of a function.
+
+_Symbols:_
+- `lsp_document_symbols` — Outline of every symbol in a file.
+- `lsp_workspace_symbols` — Find a declaration by name across the whole workspace.
+- `lsp_document_highlight` — Every read/write of a symbol within one file.
+
+_Diagnostics:_
+- `lsp_diagnostics` — Live syntax and type-checking errors/warnings for a file.
+
+_Mutations (write to disk):_
+- `lsp_rename` — Semantic rename applied across all affected files.
+- `lsp_code_actions` — List available quick-fixes and refactors at a location.
+- `lsp_execute_code_action` — Apply one of the actions from `lsp_code_actions`.
+
+Symbol- and hierarchy-listing tools return compact `Kind name  path:line` text by default; pass `detail="full"` for the raw LSP JSON.
 
 **Configuration:**
 - `MCP_LSP_COMMAND`: The shell command to launch the underlying LSP server (default: `"pyright-langserver --stdio"`).
