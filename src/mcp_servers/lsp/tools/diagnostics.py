@@ -8,7 +8,11 @@ from mcp_servers.lsp import utils
 
 
 async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
-    """Get the syntax and type-checking diagnostics for the given file.
+    """Get live syntax and type-checking diagnostics for a file (IDE problems panel).
+
+    Prefer over running a linter/type-checker in the shell to check a single
+    file: returns the language server's errors and warnings with positions,
+    already in sync with your latest edits.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.

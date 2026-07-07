@@ -8,7 +8,10 @@ from mcp_servers.lsp import utils
 
 
 async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get the type signature and docstring for the symbol at the given position.
+    """Get the type signature and docstring for a symbol (IDE hover).
+
+    Prefer over reading the whole file when you just need a symbol's inferred
+    type and documentation at a position.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -47,7 +50,11 @@ async def lsp_hover(filepath: str, line: int, char: int, ctx: Context) -> str:
 
 
 async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get the definition location for the symbol at the given position.
+    """Jump to where a symbol is defined (IDE go-to-definition).
+
+    Prefer this over grep/rg when you want the *definition* of a symbol: it
+    resolves imports, aliases, and scope, returning the true source location
+    rather than every textual match.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -84,7 +91,10 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
 
 
 async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get the type definition location for the symbol at the given position.
+    """Jump to the definition of a symbol's type (IDE go-to-type-definition).
+
+    Prefer over grep when you have a variable/expression and need its declared
+    type's source — critical for Go interfaces and Python duck typing.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -120,7 +130,11 @@ async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context)
 
 
 async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get the implementation location(s) for the symbol at the given position.
+    """Find concrete implementations of an interface/abstract symbol (IDE go-to-implementation).
+
+    Prefer over grep for "what implements this": it understands the type
+    system, so it finds implementers even when they never name the interface
+    textually (e.g. Go structural interfaces).
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -156,7 +170,11 @@ async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) 
 
 
 async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get all reference locations for the symbol at the given position.
+    """Find every use of a symbol across the project (IDE find-references).
+
+    Prefer this over grep/rg for "where is this used": it matches the symbol
+    semantically (not by name), so it excludes unrelated identifiers that
+    happen to share the same text and includes uses reached through imports.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -196,7 +214,11 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
 async def lsp_call_hierarchy(
     filepath: str, line: int, char: int, direction: str, ctx: Context
 ) -> str:
-    """Get the call hierarchy (incoming or outgoing calls) for the symbol at the given position.
+    """Trace who calls a function, or what it calls (IDE call hierarchy).
+
+    Prefer over grep for understanding execution flow: `incoming` returns the
+    callers of the symbol, `outgoing` returns the functions it calls, each
+    resolved semantically with exact call-site ranges.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
