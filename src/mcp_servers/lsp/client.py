@@ -35,6 +35,7 @@ class LSPSession:
         self._diagnostics: dict[str, list[Any]] = {}
         self.last_used = time.monotonic()
         self._settings: dict[str, Any] = {}
+        self.capabilities: dict[str, Any] = {}
 
     def update_activity(self):
         self.last_used = time.monotonic()
@@ -427,6 +428,7 @@ class LSPSession:
 
         # Parse sync kind
         if result and "capabilities" in result:
+            self.capabilities = result["capabilities"]
             sync = result["capabilities"].get("textDocumentSync")
             if isinstance(sync, dict):
                 self._sync_kind = sync.get("change", 1)
@@ -517,14 +519,25 @@ class LSPClient:
 
     def __init__(self, root_uri: str = "") -> None:
         self.root_uri = root_uri
-        self.sessions: dict[str, LSPSession] = {}
+        self.sessions: dict[str, list[LSPSession | None]] = {}
         self.language_commands = {
-            "python": ["pyright-langserver", "--stdio"],
-            "go": ["gopls"],
-            "rust": ["rust-analyzer"],
-            "typescript": ["typescript-language-server", "--stdio"],
-            "javascript": ["typescript-language-server", "--stdio"],
+            "python": [
+                ["pyright-langserver", "--stdio"],
+                ["ruff", "server"],
+            ],
+            "go": [["gopls"]],
+            "rust": [["rust-analyzer"]],
+            "typescript": [["typescript-language-server", "--stdio"]],
+            "javascript": [["typescript-language-server", "--stdio"]],
         }
+
+        import os
+        import shlex
+
+        env_cmd = os.environ.get("MCP_LSP_COMMAND")
+        if env_cmd:
+            self.language_commands["python"] = [shlex.split(env_cmd)]
+
         self.idle_timeout_secs = 600.0  # 10 minutes
         self._reap_task: asyncio.Task[None] | None = None
         self._watch_task: asyncio.Task[None] | None = None
@@ -551,8 +564,10 @@ class LSPClient:
                 await self._watch_task
             self._watch_task = None
 
-        for session in list(self.sessions.values()):
-            await session.stop()
+        for session_list in list(self.sessions.values()):
+            for session in session_list:
+                if session is not None:
+                    await session.stop()
         self.sessions.clear()
 
     async def initialize(self, root_uri: str) -> Any:
@@ -560,52 +575,64 @@ class LSPClient:
         self.root_uri = root_uri
         return {"capabilities": {}}
 
-    async def _get_or_create_session(self, language_id: str) -> LSPSession:
-        if language_id in self.sessions:
-            session = self.sessions[language_id]
-            if session.is_alive():
-                return session
-            # If it crashed, remove it and we will recreate
-            logger.warning(f"LSP session for {language_id} crashed. Restarting...")
-            await session.stop()
-            del self.sessions[language_id]
-
+    async def _get_or_create_sessions(self, language_id: str) -> list[LSPSession]:
         if language_id not in self.language_commands:
             raise ValueError(f"Unsupported language: {language_id}")
 
-        cmd = self.language_commands[language_id]
-        import os
-        import shlex
+        cmds = self.language_commands[language_id]
+        if language_id not in self.sessions:
+            self.sessions[language_id] = [None] * len(cmds)
 
-        if language_id == "python":
-            cmd = shlex.split(os.environ.get("MCP_LSP_COMMAND", "pyright-langserver --stdio"))
+        session_list = self.sessions[language_id]
+        active_sessions = []
 
-        session = LSPSession(cmd)
-        await session.start()
-        if self.root_uri:
-            try:
-                await session.initialize(self.root_uri)
-            except Exception as e:
-                logger.error(f"Failed to initialize LSP for {language_id}: {e}")
+        for idx, cmd in enumerate(cmds):
+            session = session_list[idx]
+            if session is not None and not session.is_alive():
+                logger.warning(
+                    f"LSP session for {language_id} (command: {' '.join(cmd)}) crashed. Restarting..."
+                )
                 await session.stop()
-                raise
+                session = None
+                session_list[idx] = None
 
-        self.sessions[language_id] = session
-        return session
+            if session is None:
+                try:
+                    session = LSPSession(cmd)
+                    await session.start()
+                    if self.root_uri:
+                        await session.initialize(self.root_uri)
+                    session_list[idx] = session
+                except Exception as e:
+                    logger.error(
+                        f"Failed to spawn/initialize LSP session for {language_id} (command: {' '.join(cmd)}): {e}"
+                    )
+                    if session is not None:
+                        await session.stop()
+                    session = None
+                    session_list[idx] = None
+
+            if session is not None:
+                active_sessions.append(session)
+
+        if not active_sessions:
+            raise RuntimeError(f"All configured LSP servers failed to start for {language_id}")
+
+        return active_sessions
 
     async def _reap_loop(self) -> None:
         try:
             while True:
                 await asyncio.sleep(60)
                 now = time.monotonic()
-                to_remove = []
-                for lang, session in list(self.sessions.items()):
-                    if now - session.last_used > self.idle_timeout_secs:
-                        logger.info(f"Reaping idle LSP session for {lang}")
-                        to_remove.append((lang, session))
-                for lang, session in to_remove:
-                    await session.stop()
-                    self.sessions.pop(lang, None)
+                for lang, session_list in list(self.sessions.items()):
+                    for idx, session in enumerate(session_list):
+                        if session is not None and now - session.last_used > self.idle_timeout_secs:
+                            logger.info(
+                                f"Reaping idle LSP session for {lang} (command: {' '.join(session.command)})"
+                            )
+                            await session.stop()
+                            session_list[idx] = None
         except asyncio.CancelledError:
             pass
 
@@ -670,45 +697,198 @@ class LSPClient:
                 is_first_pass = False
 
                 if changes:
-                    for lang, session in list(self.sessions.items()):
-                        try:
-                            await session.send_notification(
-                                "workspace/didChangeWatchedFiles", {"changes": changes}
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to send didChangeWatchedFiles to {lang}: {e}")
+                    for lang, session_list in list(self.sessions.items()):
+                        for session in session_list:
+                            if session is not None:
+                                try:
+                                    await session.send_notification(
+                                        "workspace/didChangeWatchedFiles", {"changes": changes}
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Failed to send didChangeWatchedFiles to {lang} (command: {' '.join(session.command)}): {e}"
+                                    )
         except asyncio.CancelledError:
             pass
 
     async def sync_file(self, uri: str, language_id: str, text: str) -> None:
-        """Synchronize file with the correct language server, with retry logic."""
-        session = await self._get_or_create_session(language_id)
-        try:
-            await session.sync_file(uri, language_id, text)
-        except RuntimeError:
-            # Maybe broken pipe, retry once
-            session = await self._get_or_create_session(language_id)
-            await session.sync_file(uri, language_id, text)
+        """Synchronize file with all active language servers, with retry logic."""
+        sessions = await self._get_or_create_sessions(language_id)
+        for session in sessions:
+            try:
+                await session.sync_file(uri, language_id, text)
+            except RuntimeError:
+                # Maybe broken pipe, recreate and retry once
+                sessions_retry = await self._get_or_create_sessions(language_id)
+                for s in sessions_retry:
+                    if s.command == session.command:
+                        await s.sync_file(uri, language_id, text)
+                        break
 
     async def send_request(
         self, language_id: str, method: str, params: Any = None, timeout: float | None = 10.0
     ) -> Any:
-        session = await self._get_or_create_session(language_id)
-        try:
-            return await session.send_request(method, params, timeout)
-        except RuntimeError:
-            session = await self._get_or_create_session(language_id)
-            return await session.send_request(method, params, timeout)
+        active_sessions = await self._get_or_create_sessions(language_id)
+        if not active_sessions:
+            raise RuntimeError(f"No active LSP sessions running for {language_id}")
+
+        MUTATION_CAPABILITIES = {
+            "textDocument/rename": "renameProvider",
+            "textDocument/codeAction": "codeActionProvider",
+            "textDocument/formatting": "documentFormattingProvider",
+            "workspace/executeCommand": "executeCommandProvider",
+        }
+
+        # 1. Routing for mutations
+        if method in MUTATION_CAPABILITIES:
+            capability = MUTATION_CAPABILITIES[method]
+            target_session = None
+
+            if method == "workspace/executeCommand":
+                cmd_name = params.get("command") if isinstance(params, dict) else None
+                if cmd_name:
+                    for s in active_sessions:
+                        provider = s.capabilities.get("executeCommandProvider")
+                        if isinstance(provider, dict) and cmd_name in provider.get("commands", []):
+                            target_session = s
+                            break
+
+            if target_session is None:
+                for s in active_sessions:
+                    if s.capabilities.get(capability):
+                        target_session = s
+                        break
+
+            if target_session is None:
+                logger.warning(
+                    f"No session for {language_id} declared capability {capability}. Routing to first active session."
+                )
+                target_session = active_sessions[0]
+
+            try:
+                return await target_session.send_request(method, params, timeout)
+            except RuntimeError:
+                # Retry once by recreating sessions
+                active_sessions = await self._get_or_create_sessions(language_id)
+                target_session = None
+                if method == "workspace/executeCommand":
+                    cmd_name = params.get("command") if isinstance(params, dict) else None
+                    if cmd_name:
+                        for s in active_sessions:
+                            provider = s.capabilities.get("executeCommandProvider")
+                            if isinstance(provider, dict) and cmd_name in provider.get(
+                                "commands", []
+                            ):
+                                target_session = s
+                                break
+                if target_session is None:
+                    for s in active_sessions:
+                        if s.capabilities.get(capability):
+                            target_session = s
+                            break
+                if target_session is None:
+                    target_session = active_sessions[0]
+                return await target_session.send_request(method, params, timeout)
+
+        # 2. Fan-out for Queries & Navigation
+        tasks = [s.send_request(method, params, timeout) for s in active_sessions]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # If any query task returned a RuntimeError (e.g. broken pipe), retry those tasks once
+        if any(isinstance(r, RuntimeError) for r in results):
+            active_sessions = await self._get_or_create_sessions(language_id)
+            retry_tasks = []
+            for idx, r in enumerate(results):
+                if isinstance(r, RuntimeError) and idx < len(active_sessions):
+                    retry_tasks.append(active_sessions[idx].send_request(method, params, timeout))
+                else:
+                    fut = asyncio.Future()
+                    if isinstance(r, Exception):
+                        fut.set_exception(r)
+                    else:
+                        fut.set_result(r)
+                    retry_tasks.append(fut)
+            results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+
+        valid_responses = []
+        exceptions = []
+        for r in results:
+            if isinstance(r, Exception):
+                exceptions.append(r)
+            elif r is not None:
+                valid_responses.append(r)
+
+        if not valid_responses and exceptions:
+            # Propagate the first exception if everything failed
+            raise exceptions[0]
+
+        if not valid_responses:
+            return None
+
+        # 3. Merge responses
+        if method == "textDocument/hover":
+            merged_contents = []
+            for resp in valid_responses:
+                if isinstance(resp, dict):
+                    contents = resp.get("contents")
+                    if contents:
+                        if isinstance(contents, list):
+                            merged_contents.extend(contents)
+                        else:
+                            merged_contents.append(contents)
+            if merged_contents:
+                return {"contents": merged_contents}
+            return None
+
+        elif method in (
+            "textDocument/definition",
+            "textDocument/typeDefinition",
+            "textDocument/implementation",
+            "textDocument/references",
+            "textDocument/documentHighlight",
+            "textDocument/documentSymbol",
+            "textDocument/prepareCallHierarchy",
+            "callHierarchy/incomingCalls",
+            "callHierarchy/outgoingCalls",
+            "workspace/symbol",
+        ):
+            merged_list = []
+            for resp in valid_responses:
+                if isinstance(resp, list):
+                    merged_list.extend(resp)
+                elif isinstance(resp, dict):
+                    merged_list.append(resp)
+            return merged_list
+
+        return valid_responses[0]
 
     async def send_notification(self, language_id: str, method: str, params: Any = None) -> None:
-        session = await self._get_or_create_session(language_id)
-        try:
-            await session.send_notification(method, params)
-        except RuntimeError:
-            session = await self._get_or_create_session(language_id)
-            await session.send_notification(method, params)
+        sessions = await self._get_or_create_sessions(language_id)
+        for session in sessions:
+            try:
+                await session.send_notification(method, params)
+            except RuntimeError:
+                sessions_retry = await self._get_or_create_sessions(language_id)
+                for s in sessions_retry:
+                    if s.command == session.command:
+                        await s.send_notification(method, params)
+                        break
 
-    def get_diagnostics(self, uri: str, language_id: str) -> list[Any] | None:
-        if language_id in self.sessions:
-            return self.sessions[language_id].get_diagnostics(uri)
-        return None
+    def get_diagnostics(self, uri: str, language_id: str, force: bool = False) -> list[Any] | None:
+        if language_id not in self.sessions:
+            return None
+
+        merged_diagnostics = []
+        any_published = False
+
+        for session in self.sessions[language_id]:
+            if session is not None:
+                diags = session.get_diagnostics(uri)
+                if diags is not None:
+                    merged_diagnostics.extend(diags)
+                    any_published = True
+                elif not force:
+                    # If any active server hasn't published yet and we aren't forcing, return None
+                    return None
+
+        return merged_diagnostics if any_published else None

@@ -33,6 +33,9 @@ async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
             await asyncio.sleep(0.1)
 
         if diagnostics is None:
+            diagnostics = utils.lsp_client.get_diagnostics(uri, language_id, force=True)
+
+        if diagnostics is None:
             return "No diagnostics found for this file (the LSP hasn't finished analyzing it yet)."
         if not diagnostics:
             return "No diagnostics found for this file (it is error-free)."

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from mcp_servers.lsp.tools.mutations import lsp_code_actions, lsp_execute_code_action, lsp_rename
+from mcp_servers.lsp.tools.mutations import (
+    lsp_code_actions,
+    lsp_execute_code_action,
+    lsp_format,
+    lsp_rename,
+)
 from mcp_servers.lsp.tools.navigation import (
     lsp_call_hierarchy,
     lsp_definition,
@@ -31,4 +36,5 @@ __all__ = [
     "lsp_rename",
     "lsp_code_actions",
     "lsp_execute_code_action",
+    "lsp_format",
 ]

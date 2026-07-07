@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -6,6 +7,7 @@ from mcp_servers.lsp.tools.mutations import (
     apply_workspace_edit,
     lsp_code_actions,
     lsp_execute_code_action,
+    lsp_format,
     lsp_rename,
 )
 
@@ -440,3 +442,91 @@ async def test_lsp_execute_code_action_no_edit_or_command():
 
     res = await lsp_execute_code_action(0, ctx)
     assert "executed but no edits or commands were found" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_format_success():
+    ctx = MagicMock()
+    path_mock = MagicMock()
+
+    with (
+        patch("mcp_servers.lsp.utils._prepare_file", return_value=path_mock),
+        patch(
+            "mcp_servers.lsp.utils._sync_file_with_lsp", return_value=("file:///test.py", "python")
+        ),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+        patch(
+            "mcp_servers.lsp.tools.mutations.apply_workspace_edit", return_value="Updated /test.py"
+        ) as mock_apply,
+    ):
+        mock_client.send_request = AsyncMock(return_value=[{"range": {}, "newText": "formatted"}])
+
+        res = await lsp_format("test.py", ctx)
+        assert res == "Updated /test.py"
+        mock_client.send_request.assert_awaited_once_with(
+            "python",
+            "textDocument/formatting",
+            {
+                "textDocument": {"uri": "file:///test.py"},
+                "options": {"tabSize": 4, "insertSpaces": True},
+            },
+        )
+        mock_apply.assert_called_once_with(
+            {"changes": {"file:///test.py": [{"range": {}, "newText": "formatted"}]}}
+        )
+
+
+@pytest.mark.asyncio
+async def test_lsp_format_invalid_file():
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.utils._prepare_file", return_value="Error: File does not exist"):
+        res = await lsp_format("test.py", ctx)
+        assert res == "Error: File does not exist"
+
+
+@pytest.mark.asyncio
+async def test_lsp_format_no_changes():
+    ctx = MagicMock()
+    path_mock = MagicMock()
+    with (
+        patch("mcp_servers.lsp.utils._prepare_file", return_value=path_mock),
+        patch(
+            "mcp_servers.lsp.utils._sync_file_with_lsp", return_value=("file:///test.py", "python")
+        ),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.send_request = AsyncMock(return_value=[])
+        res = await lsp_format("test.py", ctx)
+        assert res == "No formatting changes returned."
+
+
+@pytest.mark.asyncio
+async def test_lsp_format_exception():
+    ctx = MagicMock()
+    path_mock = MagicMock()
+    with (
+        patch("mcp_servers.lsp.utils._prepare_file", return_value=path_mock),
+        patch(
+            "mcp_servers.lsp.utils._sync_file_with_lsp", return_value=("file:///test.py", "python")
+        ),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.send_request = AsyncMock(side_effect=Exception("formatting error"))
+        res = await lsp_format("test.py", ctx)
+        assert "Error formatting file: formatting error" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_format_cancelled():
+    ctx = MagicMock()
+    path_mock = MagicMock()
+    with (
+        patch("mcp_servers.lsp.utils._prepare_file", return_value=path_mock),
+        patch(
+            "mcp_servers.lsp.utils._sync_file_with_lsp", return_value=("file:///test.py", "python")
+        ),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.send_request = AsyncMock(side_effect=asyncio.CancelledError())
+        with pytest.raises(asyncio.CancelledError):
+            await lsp_format("test.py", ctx)
