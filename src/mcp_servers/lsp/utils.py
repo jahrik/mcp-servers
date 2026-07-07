@@ -36,6 +36,22 @@ def _candidate_roots() -> list[Path]:
     return roots
 
 
+def _safe_exists(p: Path) -> bool:
+    """``Path.exists()`` that treats an unreadable path (OSError) as absent."""
+    try:
+        return p.exists()
+    except OSError:
+        return False
+
+
+def _safe_is_file(p: Path) -> bool:
+    """``Path.is_file()`` that treats an unreadable path (OSError) as not-a-file."""
+    try:
+        return p.is_file()
+    except OSError:
+        return False
+
+
 def _prepare_file(filepath: str) -> Path | str:
     """Validate and resolve filepath. Returns Path on success, error string on failure."""
     root_obj = Path(WORKSPACE_ROOT).resolve()
@@ -47,9 +63,9 @@ def _prepare_file(filepath: str) -> Path | str:
             filepath_obj.relative_to(root_obj)
         except ValueError:
             return f"Error: Filepath must be within the workspace root {WORKSPACE_ROOT}"
-        if not filepath_obj.exists():
+        if not _safe_exists(filepath_obj):
             return f"Error: File not found: {filepath_obj}"
-        if not filepath_obj.is_file():
+        if not _safe_is_file(filepath_obj):
             return f"Error: Not a regular file: {filepath_obj}"
         return filepath_obj
 
@@ -64,7 +80,7 @@ def _prepare_file(filepath: str) -> Path | str:
             candidate.relative_to(root_obj)
         except ValueError:
             continue
-        if candidate.is_file() and candidate not in matches:
+        if _safe_is_file(candidate) and candidate not in matches:
             matches.append(candidate)
 
     if len(matches) == 1:

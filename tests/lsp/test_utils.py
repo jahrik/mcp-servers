@@ -66,6 +66,41 @@ def test_prepare_file_absolute_not_found(tmp_path):
     assert result.startswith("Error: File not found")
 
 
+def test_safe_exists_swallows_oserror(tmp_path):
+    target = tmp_path / "f.py"
+    target.write_text("x = 1\n")
+    with patch.object(Path, "exists", side_effect=PermissionError):
+        assert utils._safe_exists(target) is False
+
+
+def test_safe_is_file_swallows_oserror(tmp_path):
+    target = tmp_path / "f.py"
+    target.write_text("x = 1\n")
+    with patch.object(Path, "is_file", side_effect=PermissionError):
+        assert utils._safe_is_file(target) is False
+
+
+def test_prepare_file_absolute_exists_oserror(tmp_path):
+    # An unreadable absolute path resolves to "File not found" instead of
+    # raising and bypassing the tool-level error handling.
+    target = tmp_path / "f.py"
+    target.write_text("x = 1\n")
+    with _patch_root(tmp_path), patch.object(Path, "exists", side_effect=PermissionError):
+        result = utils._prepare_file(str(target))
+    assert isinstance(result, str)
+    assert result.startswith("Error: File not found")
+
+
+def test_prepare_file_relative_is_file_oserror(tmp_path):
+    # An unreadable relative candidate is treated as a non-match, not a crash.
+    target = tmp_path / "f.py"
+    target.write_text("x = 1\n")
+    with _patch_root(tmp_path), patch.object(Path, "is_file", side_effect=PermissionError):
+        result = utils._prepare_file("f.py")
+    assert isinstance(result, str)
+    assert result.startswith("Error: File not found")
+
+
 def test_prepare_file_absolute_directory(tmp_path):
     sub = tmp_path / "adir"
     sub.mkdir()
