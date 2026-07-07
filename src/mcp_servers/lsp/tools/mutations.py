@@ -88,7 +88,12 @@ def apply_workspace_edit(edit: dict) -> str:
 
 
 async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ctx: Context) -> str:
-    """Rename a symbol across the workspace and apply the edits to disk."""
+    """Rename a symbol everywhere and apply the edits to disk (IDE rename refactor).
+
+    Strongly prefer over sed/grep-based find-and-replace: the language server
+    rewrites only true references to this symbol across all files, leaving
+    unrelated same-named identifiers untouched.
+    """
     if line < 1 or character < 0:
         return "Error: line must be >= 1 and character must be >= 0"
 

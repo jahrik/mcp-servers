@@ -8,7 +8,10 @@ from mcp_servers.lsp import utils
 
 
 async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
-    """Get all symbols (classes, functions, methods, etc.) defined in the given file.
+    """Outline all symbols (classes, functions, methods, ...) in a file (IDE document outline).
+
+    Prefer over grepping for `def`/`class` to map a file's structure: returns
+    each symbol's kind, range, and nesting.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
@@ -36,7 +39,11 @@ async def lsp_document_symbols(filepath: str, ctx: Context) -> str:
 
 
 async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
-    """Search for a symbol across the entire workspace/project.
+    """Find where a symbol is defined anywhere in the project (IDE symbol search / go-to-symbol).
+
+    Prefer over grep to locate a class/function by name: it matches
+    declarations across the whole workspace and returns their source
+    locations, without the noise of textual matches in comments or strings.
 
     Args:
         query: The symbol name or partial name to search for.
@@ -74,7 +81,11 @@ async def lsp_workspace_symbols(query: str, ctx: Context) -> str:
 
 
 async def lsp_document_highlight(filepath: str, line: int, char: int, ctx: Context) -> str:
-    """Get document highlights for the symbol at the given position (e.g. all read/write occurrences).
+    """Highlight all occurrences of a symbol within one file (IDE highlight-references).
+
+    Prefer over grep to see every read/write of a local variable or parameter
+    inside a function: scoped to the file and matched semantically, so it
+    won't catch same-named symbols from other scopes.
 
     Args:
         filepath: Absolute or workspace-relative path to the file.
