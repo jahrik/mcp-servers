@@ -14,7 +14,7 @@ lsp_client = LSPClient(root_uri=Path(WORKSPACE_ROOT).resolve().as_uri())
 
 
 def _candidate_roots() -> list[Path]:
-    """Roots a relative filepath may be resolved against.
+    """Roots that a relative filepath may be resolved against.
 
     Returns the workspace root followed by its immediate child directories that
     look like repositories (contain a ``.git`` entry). This lets a repo-relative
@@ -49,10 +49,14 @@ def _prepare_file(filepath: str) -> Path | str:
             return f"Error: Filepath must be within the workspace root {WORKSPACE_ROOT}"
         if not filepath_obj.exists():
             return f"Error: File not found: {filepath_obj}"
+        if not filepath_obj.is_file():
+            return f"Error: Not a regular file: {filepath_obj}"
         return filepath_obj
 
     # Relative path: try the workspace root and each child repository. Every
     # candidate is containment-checked, so this never escapes the workspace.
+    # Only regular files count as matches — a directory would fail later when
+    # opened for syncing, so it must not be returned here.
     matches: list[Path] = []
     for base in _candidate_roots():
         candidate = (base / p).resolve()
@@ -60,7 +64,7 @@ def _prepare_file(filepath: str) -> Path | str:
             candidate.relative_to(root_obj)
         except ValueError:
             continue
-        if candidate.exists() and candidate not in matches:
+        if candidate.is_file() and candidate not in matches:
             matches.append(candidate)
 
     if len(matches) == 1:

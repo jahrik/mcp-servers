@@ -66,6 +66,29 @@ def test_prepare_file_absolute_not_found(tmp_path):
     assert result.startswith("Error: File not found")
 
 
+def test_prepare_file_absolute_directory(tmp_path):
+    sub = tmp_path / "adir"
+    sub.mkdir()
+
+    with _patch_root(tmp_path):
+        result = utils._prepare_file(str(sub))
+
+    assert isinstance(result, str)
+    assert result.startswith("Error: Not a regular file")
+
+
+def test_prepare_file_relative_directory_not_matched(tmp_path):
+    # A relative path that resolves to a directory is not a valid match and
+    # falls through to the not-found message rather than being returned.
+    (tmp_path / "adir").mkdir()
+
+    with _patch_root(tmp_path):
+        result = utils._prepare_file("adir")
+
+    assert isinstance(result, str)
+    assert result.startswith("Error: File not found")
+
+
 def test_prepare_file_relative_in_child_repo(tmp_path):
     repo = tmp_path / "repo-a"
     (repo / "src").mkdir(parents=True)
