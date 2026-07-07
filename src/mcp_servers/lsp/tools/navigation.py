@@ -212,7 +212,7 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
 
 
 async def lsp_call_hierarchy(
-    filepath: str, line: int, char: int, direction: str, ctx: Context, detail: str = "compact"
+    filepath: str, line: int, char: int, direction: str, ctx: Context, *, detail: str = "compact"
 ) -> str:
     """Trace who calls a function, or what it calls (IDE call hierarchy).
 
@@ -230,6 +230,9 @@ async def lsp_call_hierarchy(
     """
     if direction not in ("incoming", "outgoing"):
         return "Error: direction must be 'incoming' or 'outgoing'"
+
+    if detail not in ("compact", "full"):
+        return "Error: detail must be 'compact' or 'full'"
 
     filepath_obj = utils._prepare_file(filepath)
     if isinstance(filepath_obj, str):

@@ -267,6 +267,27 @@ async def test_lsp_document_symbols_full_detail():
         assert '"kind": 12' in res
 
 
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_document_symbols("/path/to/file.py", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_workspace_symbols("foo", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_invalid_detail():
+    ctx = MagicMock()
+    res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx, detail="bogus")
+    assert res == "Error: detail must be 'compact' or 'full'"
+
+
 def test_format_location():
     from mcp_servers.lsp.utils import _format_location
 
