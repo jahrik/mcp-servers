@@ -240,6 +240,32 @@ def test_apply_workspace_edit_append():
         assert "Updated /test.py" in res
 
 
+def test_apply_workspace_edit_multiline_out_of_bounds():
+    # start_line beyond the file with a multi-line range should append, not IndexError.
+    edit = {
+        "changes": {
+            "file:///test.py": [
+                {
+                    "range": {
+                        "start": {"line": 5, "character": 0},
+                        "end": {"line": 6, "character": 0},
+                    },
+                    "newText": "appended\n",
+                }
+            ]
+        }
+    }
+    with (
+        patch("mcp_servers.lsp.utils.lsp_client"),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
+        patch("builtins.open", mock_open(read_data="foo\n")),
+    ):
+        res = apply_workspace_edit(edit)
+        assert "Updated /test.py" in res
+
+
 @pytest.mark.asyncio
 async def test_lsp_rename_error():
     ctx = MagicMock()

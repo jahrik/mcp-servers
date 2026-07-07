@@ -71,7 +71,10 @@ def apply_workspace_edit(edit: dict) -> str:
                 start_str = lines[start_line][:start_char] if start_line < len(lines) else ""
                 end_str = lines[end_line][end_char:] if end_line < len(lines) else ""
 
-                lines[start_line] = start_str + new_text + end_str
+                if start_line < len(lines):
+                    lines[start_line] = start_str + new_text + end_str
+                else:
+                    lines.append(start_str + new_text + end_str)
                 for i in range(start_line + 1, end_line + 1):
                     if i < len(lines):
                         lines[i] = ""
