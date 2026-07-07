@@ -831,3 +831,146 @@ async def test_lsp_workspace_symbols_outer_cancelled():
         type(mock_client).sessions = PropertyMock(side_effect=asyncio.CancelledError())
         with pytest.raises(asyncio.CancelledError):
             await lsp_workspace_symbols("query", ctx)
+
+
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_with_filter():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            return_value=[
+                {
+                    "name": "Widget",
+                    "kind": 5,  # Class
+                    "selectionRange": {"start": {"line": 0, "character": 6}},
+                    "children": [
+                        {
+                            "name": "render",
+                            "kind": 6,  # Method
+                            "selectionRange": {"start": {"line": 1, "character": 8}},
+                        }
+                    ],
+                }
+            ]
+        )
+
+        # Compact with Method filter
+        res = await lsp_document_symbols("/path/to/file.py", ctx, kinds=["Method"])
+        assert "render" in res
+        # Class Widget is kept as parent container
+        assert "Widget" in res
+
+        # Test top_level filter
+        res_top = await lsp_document_symbols("/path/to/file.py", ctx, top_level=True)
+        assert "Widget" in res_top
+        assert "render" not in res_top
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_with_filter():
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock()}
+        mock_client.send_request = AsyncMock(
+            return_value=[
+                {
+                    "name": "Widget",
+                    "kind": 5,  # Class
+                    "location": {
+                        "uri": "file:///path/to/file.py",
+                        "range": {"start": {"line": 0, "character": 6}},
+                    },
+                },
+                {
+                    "name": "helper",
+                    "kind": 12,  # Function
+                    "location": {
+                        "uri": "file:///path/to/file.py",
+                        "range": {"start": {"line": 10, "character": 0}},
+                    },
+                },
+            ]
+        )
+
+        res = await lsp_workspace_symbols("Widget", ctx, kinds=["Function"])
+        assert "helper" in res
+        assert "Widget" not in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_references_capping():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("builtins.open", mock_open(read_data="")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        # Mock 105 references to trigger capping (> 100)
+        refs = [
+            {
+                "uri": "file:///path/to/file.py",
+                "range": {"start": {"line": i, "character": 0}},
+            }
+            for i in range(105)
+        ]
+        mock_client.send_request = AsyncMock(return_value=refs)
+
+        with patch(
+            "mcp_servers.lsp.utils._cap_and_spill", side_effect=utils._cap_and_spill
+        ) as mock_cap:
+            res = await lsp_references("/path/to/file.py", 1, 0, ctx)
+            mock_cap.assert_called_once()
+            assert "... 5 more" in res
+            assert "[Spilled full results to: " in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_filter_no_match():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            return_value=[
+                {
+                    "name": "Widget",
+                    "kind": 5,  # Class
+                    "selectionRange": {"start": {"line": 0, "character": 6}},
+                }
+            ]
+        )
+        res = await lsp_document_symbols("/path/to/file.py", ctx, kinds=["Method"])
+        assert res == "No matching symbols found in this document."
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_filter_no_match():
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock()}
+        mock_client.send_request = AsyncMock(
+            return_value=[
+                {
+                    "name": "Widget",
+                    "kind": 5,  # Class
+                    "location": {
+                        "uri": "file:///path/to/file.py",
+                        "range": {"start": {"line": 0, "character": 6}},
+                    },
+                }
+            ]
+        )
+        res = await lsp_workspace_symbols("Widget", ctx, kinds=["Method"])
+        assert "No workspace symbols found matching query" in res

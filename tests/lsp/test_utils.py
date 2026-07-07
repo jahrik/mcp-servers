@@ -248,3 +248,69 @@ def test_format_symbols_nested_children():
 
 def test_format_symbols_skips_non_dict():
     assert utils._format_symbols(["not-a-dict", 42]) == []
+
+
+def test_filter_symbols():
+    symbols = [
+        "not-a-dict",  # covers line 225
+        {
+            "name": "Widget",
+            "kind": 5,  # Class
+            "selectionRange": {"start": {"line": 0, "character": 6}},
+            "children": [
+                {
+                    "name": "render",
+                    "kind": 6,  # Method
+                    "selectionRange": {"start": {"line": 1, "character": 8}},
+                },
+                {
+                    "name": "x",
+                    "kind": 13,  # Variable
+                    "selectionRange": {"start": {"line": 2, "character": 8}},
+                },
+            ],
+        },
+    ]
+    # Test filtering kinds (e.g. only Method)
+    res_kinds = utils._filter_symbols(symbols, kinds=["Method"])
+    # Class widget is kept because it contains method render, but Variable x is stripped
+    assert len(res_kinds) == 1
+    assert res_kinds[0]["name"] == "Widget"
+    assert len(res_kinds[0]["children"]) == 1
+    assert res_kinds[0]["children"][0]["name"] == "render"
+
+    # Test recursion when matching kind (covers line 242)
+    res_recurse = utils._filter_symbols(symbols, kinds=["Class", "Method"])
+    assert len(res_recurse) == 1
+    assert res_recurse[0]["name"] == "Widget"
+    assert len(res_recurse[0]["children"]) == 1
+    assert res_recurse[0]["children"][0]["name"] == "render"
+
+    # Test top_level constraint
+    res_top = utils._filter_symbols(symbols, top_level=True)
+    assert len(res_top) == 1
+    assert "children" not in res_top[0]
+
+
+def test_cap_and_spill():
+    # Under limit
+    lines = ["a", "b"]
+    res = utils._cap_and_spill([{"name": "a"}, {"name": "b"}], lines, max_n=5)
+    assert res == "a\nb"
+
+    # Over limit
+    results = [{"name": f"item{i}"} for i in range(10)]
+    formatted = [f"item{i}" for i in range(10)]
+    res_spill = utils._cap_and_spill(results, formatted, max_n=3)
+    assert "item0" in res_spill
+    assert "item1" in res_spill
+    assert "item2" in res_spill
+    assert "item3" not in res_spill
+    assert "... 7 more" in res_spill
+    assert "[Spilled full results to: " in res_spill
+    assert ".jsonl" in res_spill
+
+    # Spill exception handling (covers lines 285-287)
+    with patch("tempfile.NamedTemporaryFile", side_effect=Exception("spill error")):
+        res_err = utils._cap_and_spill(results, formatted, max_n=3)
+        assert "[Error: Failed to write full spill file: spill error]" in res_err

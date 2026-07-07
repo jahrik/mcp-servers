@@ -247,7 +247,7 @@ async def test_handle_payload_server_request():
     client._send.assert_not_called()
 
     # Method with ID (requires response)
-    client._handle_payload({"id": 10, "method": "workspace/configuration", "params": {}})
+    client._handle_payload({"id": 10, "method": "workspace/someUnknownMethod", "params": {}})
     # asyncio.create_task is used, so we need to yield to event loop
     await asyncio.sleep(0.01)
 
@@ -839,3 +839,122 @@ async def test_sync_file_incremental_diff_branches():
     session._document_versions["file:///test2.py"] = 1
     await session.sync_file("file:///test2.py", "python", "test\n")
     session.send_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_lsp_session_settings_loading_and_configuration(tmp_path):
+    session = LSPSession(["dummy"])
+    session.send_request = AsyncMock(return_value={"capabilities": {}})
+    session.send_notification = AsyncMock()
+
+    # 1. Setup mock venv, pyproject.toml, and .vscode/settings.json
+    venv_dir = tmp_path / ".venv"
+    venv_dir.mkdir()
+    import sys
+
+    python_bin = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    python_path = venv_dir / python_bin
+    python_path.parent.mkdir(parents=True, exist_ok=True)
+    python_path.write_text("python")
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[tool.pyright]\nextraPaths = ["src/lib"]\n')
+
+    vscode_dir = tmp_path / ".vscode"
+    vscode_dir.mkdir()
+    settings_json = vscode_dir / "settings.json"
+    settings_json.write_text(
+        '{\n  // comment\n  "python.analysis.indexing": false,\n  "python.analysis.extraPaths": ["src/my_extra"]\n}\n'
+    )
+
+    root_uri = tmp_path.resolve().as_uri()
+    await session.initialize(root_uri)
+
+    # 2. Check settings were loaded and merged correctly
+    # Default python.analysis.indexing was overridden by settings.json
+    assert session._get_configuration_for_section("python.analysis.indexing") is False
+    assert session._get_configuration_for_section("python.analysis.extraPaths") == ["src/my_extra"]
+
+    # pyproject.toml setting
+    assert session._get_configuration_for_section("pyright") == {"extraPaths": ["src/lib"]}
+
+    # Auto-detected python path
+    assert session._get_configuration_for_section("python.pythonPath") == str(python_path)
+
+    # Nested and flat key reconstruction
+    # Section "python" should return a dict containing analysis and pythonPath
+    python_config = session._get_configuration_for_section("python")
+    assert isinstance(python_config, dict)
+    assert python_config["pythonPath"] == str(python_path)
+    assert python_config["analysis"]["indexing"] is False
+    assert python_config["analysis"]["extraPaths"] == ["src/my_extra"]
+
+
+@pytest.mark.asyncio
+async def test_lsp_session_handle_payload_workspace_configuration():
+    session = LSPSession(["dummy"])
+    session._send = AsyncMock()
+    session._settings = {"python": {"venvPath": "/path/to/venv"}}
+
+    # We call _handle_payload with workspace/configuration
+    session._handle_payload(
+        {
+            "id": 123,
+            "method": "workspace/configuration",
+            "params": {"items": [{"section": "python"}]},
+        }
+    )
+
+    # Yield to let asyncio task execute
+    await asyncio.sleep(0.01)
+
+    session._send.assert_called_once()
+    payload = session._send.call_args[0][0]
+    assert payload["id"] == 123
+    assert payload["result"] == [{"venvPath": "/path/to/venv"}]
+
+
+def test_get_configuration_for_section_missed_branches():
+    session = LSPSession(["dummy"])
+    session._settings = {
+        "python": {"analysis": {"indexing": True}},
+        "python.venvPath": "/flat/venv",
+    }
+
+    # Line 279: empty section
+    assert session._get_configuration_for_section(None) == session._settings
+    assert session._get_configuration_for_section("") == session._settings
+
+    # Line 291 & 296: check nested match traversing pre-existing dict
+    assert session._get_configuration_for_section("python.analysis") == {"indexing": True}
+
+    # Line 312: not found
+    assert session._get_configuration_for_section("nonexistent") is None
+
+
+@pytest.mark.asyncio
+async def test_lsp_session_settings_loading_exceptions(tmp_path):
+    session = LSPSession(["dummy"])
+    session.send_request = AsyncMock(return_value={"capabilities": {}})
+    session.send_notification = AsyncMock()
+
+    # 1. Invalid pyproject.toml syntax (triggers line 352-353 exception)
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("invalid = { [to\n")
+
+    # 2. Invalid settings.json syntax (triggers line 368-369 exception)
+    vscode_dir = tmp_path / ".vscode"
+    vscode_dir.mkdir()
+    settings_json = vscode_dir / "settings.json"
+    settings_json.write_text("{ invalid json")
+
+    root_uri = tmp_path.resolve().as_uri()
+    await session.initialize(root_uri)
+    # The initialization catches both exceptions safely and logs a warning, so it shouldn't crash
+    assert session._settings == {"python.analysis.indexing": True}
+
+    # 3. Overall exception handling (triggers line 370-371 exception)
+    with patch("urllib.parse.unquote", side_effect=ValueError("unquote error")):
+        await session.initialize("file:///invalid/path")
+        # Should catch exception and not crash
+        assert session._settings == {"python.analysis.indexing": True}

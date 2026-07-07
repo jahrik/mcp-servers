@@ -7,7 +7,14 @@ from mcp.server.fastmcp import Context
 from mcp_servers.lsp import utils
 
 
-async def lsp_document_symbols(filepath: str, ctx: Context, *, detail: str = "compact") -> str:
+async def lsp_document_symbols(
+    filepath: str,
+    ctx: Context,
+    *,
+    detail: str = "compact",
+    kinds: list[str] | None = None,
+    top_level: bool = False,
+) -> str:
     """Outline all symbols (classes, functions, methods, ...) in a file (IDE document outline).
 
     Prefer over grepping for `def`/`class` to map a file's structure: returns
@@ -17,6 +24,8 @@ async def lsp_document_symbols(filepath: str, ctx: Context, *, detail: str = "co
         filepath: Absolute or workspace-relative path to the file.
         detail: "compact" (default) for one `Kind name  path:line` line per
             symbol, indented by nesting; "full" for the raw LSP JSON.
+        kinds: Optional list of symbol kinds to filter by (e.g. ["Class", "Method"]).
+        top_level: If True, returns only top-level symbols without nesting.
     """
     if detail not in ("compact", "full"):
         return "Error: detail must be 'compact' or 'full'"
@@ -34,19 +43,36 @@ async def lsp_document_symbols(filepath: str, ctx: Context, *, detail: str = "co
         if not response:
             return "No symbols found in this document."
 
+        # Filter response
+        filtered_response = (
+            utils._filter_symbols(response, kinds, top_level)
+            if (kinds is not None or top_level)
+            else response
+        )
+        if not filtered_response:
+            return "No matching symbols found in this document."
+
         if detail == "full":
             import json
 
-            return json.dumps(response, indent=2)
+            return json.dumps(filtered_response, indent=2)
 
-        return "\n".join(utils._format_symbols(response))
+        formatted_lines = utils._format_symbols(filtered_response)
+        return utils._cap_and_spill(filtered_response, formatted_lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:
         return f"Error querying LSP: {e}"
 
 
-async def lsp_workspace_symbols(query: str, ctx: Context, *, detail: str = "compact") -> str:
+async def lsp_workspace_symbols(
+    query: str,
+    ctx: Context,
+    *,
+    detail: str = "compact",
+    kinds: list[str] | None = None,
+    top_level: bool = False,
+) -> str:
     """Find where a symbol is defined anywhere in the project (IDE symbol search / go-to-symbol).
 
     Prefer over grep to locate a class/function by name: it matches
@@ -57,6 +83,9 @@ async def lsp_workspace_symbols(query: str, ctx: Context, *, detail: str = "comp
         query: The symbol name or partial name to search for.
         detail: "compact" (default) for one `Kind name  path:line` line per
             match, grouped by language; "full" for the raw LSP JSON.
+        kinds: Optional list of symbol kinds to filter by (e.g. ["Class", "Method"]).
+        top_level: If True, returns only top-level symbols (note: workspace symbols
+            are typically already flat, but filter applies for consistency).
     """
     if detail not in ("compact", "full"):
         return "Error: detail must be 'compact' or 'full'"
@@ -84,17 +113,37 @@ async def lsp_workspace_symbols(query: str, ctx: Context, *, detail: str = "comp
         if not results:
             return f"No workspace symbols found matching query '{query}'."
 
+        # Filter results
+        filtered_results = []
+        merged_results_for_spill = []
+        lines: list[str] = []
+
+        for group in results:
+            for lang, symbols in group.items():
+                filtered = (
+                    utils._filter_symbols(symbols, kinds, top_level)
+                    if (kinds is not None or top_level)
+                    else symbols
+                )
+                if filtered:
+                    filtered_results.append({lang: filtered})
+                    merged_results_for_spill.extend(filtered)
+                    lang_lines = utils._format_symbols(filtered)
+                    if lang_lines:
+                        lines.append(f"# {lang}")
+                        lines.extend(lang_lines)
+
+        if not filtered_results:
+            return (
+                f"No workspace symbols found matching query '{query}' with the specified filters."
+            )
+
         if detail == "full":
             import json
 
-            return json.dumps(results, indent=2)
+            return json.dumps(filtered_results, indent=2)
 
-        lines: list[str] = []
-        for group in results:
-            for lang, symbols in group.items():
-                lines.append(f"# {lang}")
-                lines.extend(utils._format_symbols(symbols))
-        return "\n".join(lines)
+        return utils._cap_and_spill(merged_results_for_spill, lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:
