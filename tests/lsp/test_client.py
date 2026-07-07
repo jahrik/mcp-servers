@@ -769,6 +769,42 @@ async def test_watch_loop_send_fails():
 
 
 @pytest.mark.asyncio
+async def test_watch_loop_create_delete():
+    client = LSPClient("file:///workspace")
+    mock_session = AsyncMock()
+    client.sessions["python"] = mock_session
+
+    mock_stat1 = MagicMock()
+    mock_stat1.st_mtime = 100
+    mock_stat2 = MagicMock()
+    mock_stat2.st_mtime = 200
+
+    def mock_walk_pass1(*args, **kwargs):
+        return [("/workspace", [], ["test.py"])]
+
+    def mock_walk_pass2(*args, **kwargs):
+        return [("/workspace", [], ["test.py", "new.py"])]
+
+    def mock_walk_pass3(*args, **kwargs):
+        return [("/workspace", [], ["new.py"])]  # test.py deleted
+
+    with (
+        patch("asyncio.sleep", side_effect=[None, None, None, asyncio.CancelledError()]),
+        patch("os.walk", side_effect=[mock_walk_pass1(), mock_walk_pass2(), mock_walk_pass3()]),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat", return_value=mock_stat1),
+    ):
+        await client._watch_loop()
+        # Pass 1: populate last_mtimes
+        # Pass 2: new.py created (type 1)
+        # Pass 3: test.py deleted (type 3)
+        assert mock_session.send_notification.call_count == 2
+        calls = mock_session.send_notification.call_args_list
+        assert "type': 1" in str(calls[0])
+        assert "type': 3" in str(calls[1])
+
+
+@pytest.mark.asyncio
 async def test_sync_file_incremental_diff_branches():
     session = LSPSession(["dummy"])
     session.send_notification = AsyncMock()

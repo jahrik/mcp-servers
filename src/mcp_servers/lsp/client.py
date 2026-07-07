@@ -467,10 +467,10 @@ class LSPClient:
                 for lang, session in list(self.sessions.items()):
                     if now - session.last_used > self.idle_timeout_secs:
                         logger.info(f"Reaping idle LSP session for {lang}")
-                        await session.stop()
-                        to_remove.append(lang)
-                for lang in to_remove:
-                    del self.sessions[lang]
+                        to_remove.append((lang, session))
+                for lang, session in to_remove:
+                    await session.stop()
+                    self.sessions.pop(lang, None)
         except asyncio.CancelledError:
             pass
 
@@ -489,6 +489,7 @@ class LSPClient:
 
         extensions = {".py", ".go", ".rs", ".ts", ".tsx", ".js", ".jsx"}
         last_mtimes: dict[str, float] = {}
+        is_first_pass = True
 
         try:
             while True:
@@ -497,6 +498,7 @@ class LSPClient:
                     continue
 
                 changes = []
+                current_pass_uris = set()
                 for root, _, files in os.walk(root_path):
                     if (
                         ".git" in root
@@ -512,14 +514,25 @@ class LSPClient:
                             try:
                                 mtime = path.stat().st_mtime
                                 uri = path.as_uri()
+                                current_pass_uris.add(uri)
                                 old_mtime = last_mtimes.get(uri)
                                 if old_mtime is None:
                                     last_mtimes[uri] = mtime
+                                    if not is_first_pass:
+                                        changes.append({"uri": uri, "type": 1})  # 1 = Created
                                 elif mtime > old_mtime:
                                     last_mtimes[uri] = mtime
                                     changes.append({"uri": uri, "type": 2})  # 2 = Changed
                             except Exception:
                                 pass
+
+                if not is_first_pass:
+                    for uri in list(last_mtimes.keys()):
+                        if uri not in current_pass_uris:
+                            del last_mtimes[uri]
+                            changes.append({"uri": uri, "type": 3})  # 3 = Deleted
+
+                is_first_pass = False
 
                 if changes:
                     for lang, session in list(self.sessions.items()):

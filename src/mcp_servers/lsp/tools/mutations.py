@@ -1,3 +1,4 @@
+import asyncio
 import json
 import pathlib
 from typing import Any
@@ -32,6 +33,15 @@ def apply_workspace_edit(edit: dict) -> str:
             continue
         filepath = uri[7:]
         path_obj = pathlib.Path(filepath)
+
+        try:
+            if not path_obj.is_relative_to(utils.WORKSPACE_ROOT):
+                results.append(f"Skipped {filepath} (outside workspace root)")
+                continue
+        except ValueError:
+            results.append(f"Skipped {filepath} (outside workspace root)")
+            continue
+
         if not path_obj.exists():
             results.append(f"Skipped {filepath} (does not exist)")
             continue
@@ -52,10 +62,13 @@ def apply_workspace_edit(edit: dict) -> str:
             new_text = e["newText"]
 
             if start_line == end_line:
-                line = lines[start_line]
-                lines[start_line] = line[:start_char] + new_text + line[end_char:]
+                if start_line < len(lines):
+                    line = lines[start_line]
+                    lines[start_line] = line[:start_char] + new_text + line[end_char:]
+                else:
+                    lines.append(new_text)
             else:
-                start_str = lines[start_line][:start_char]
+                start_str = lines[start_line][:start_char] if start_line < len(lines) else ""
                 end_str = lines[end_line][end_char:] if end_line < len(lines) else ""
 
                 lines[start_line] = start_str + new_text + end_str
@@ -89,6 +102,8 @@ async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ct
             return "No rename edits returned."
 
         return apply_workspace_edit(res)
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return f"Error querying LSP for rename: {e}"
 
@@ -128,6 +143,8 @@ async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Contex
             + "\n".join(output)
             + "\n\nUse lsp_execute_code_action to run one of these."
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return f"Error querying LSP for code actions: {e}"
 
@@ -170,6 +187,8 @@ async def lsp_execute_code_action(index: int, ctx: Context) -> str:
                 results.append(apply_workspace_edit(res))
             else:
                 results.append(f"Command '{cmd_name}' executed. Result: {json.dumps(res)}")
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             results.append(f"Error executing command: {e}")
 

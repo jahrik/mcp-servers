@@ -26,7 +26,10 @@ def test_apply_workspace_edit_changes():
     }
 
     with (
+        patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo()\n")) as m_open,
     ):
         res = apply_workspace_edit(edit)
@@ -54,6 +57,8 @@ def test_apply_workspace_edit_document_changes():
 
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="line1\nline2\nline3\n")) as m_open,
     ):
         res = apply_workspace_edit(edit)
@@ -64,24 +69,31 @@ def test_apply_workspace_edit_document_changes():
 def test_apply_workspace_edit_empty():
     assert apply_workspace_edit({}) == "No changes to apply."
 
+
 def test_apply_workspace_edit_skipped():
     edit = {
         "changes": {
             "http://example.com/test.py": [
                 {
-                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
-                    "newText": "bar"
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 3},
+                    },
+                    "newText": "bar",
                 }
             ],
             "file:///missing.py": [
                 {
-                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
-                    "newText": "bar"
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 3},
+                    },
+                    "newText": "bar",
                 }
-            ]
+            ],
         }
     }
-    
+
     with patch("pathlib.Path.exists", return_value=False):
         res = apply_workspace_edit(edit)
         assert "Skipped /missing.py" in res
@@ -92,6 +104,8 @@ async def test_lsp_rename_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")) as m_open,
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -130,6 +144,7 @@ async def test_lsp_rename_no_edits():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -137,7 +152,77 @@ async def test_lsp_rename_no_edits():
         mock_client.send_request = AsyncMock(return_value=None)
 
         res = await lsp_rename("/path/to/file.py", 1, 0, "bar", ctx)
-        assert "No rename edits returned" in res
+        assert "No rename edits returned." in res
+
+
+@pytest.mark.asyncio
+async def test_cancelled_errors():
+    import asyncio
+
+    from mcp_servers.lsp.tools.mutations import (
+        lsp_code_actions,
+        lsp_execute_code_action,
+        lsp_rename,
+    )
+
+    ctx = MagicMock()
+    with (
+        patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=asyncio.CancelledError()),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await lsp_rename("/test.py", 1, 0, "bar", ctx)
+        with pytest.raises(asyncio.CancelledError):
+            await lsp_code_actions("/test.py", 1, 0, ctx)
+
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
+        mock_client.send_request = AsyncMock(side_effect=asyncio.CancelledError())
+        import mcp_servers.lsp.tools.mutations as m
+
+        m._last_code_actions = {"actions": [{"command": "foo"}], "language_id": "python"}
+        with pytest.raises(asyncio.CancelledError):
+            await lsp_execute_code_action(0, ctx)
+
+
+def test_apply_workspace_edit_value_error():
+    edit = {"changes": {"file:///outside/test.py": []}}
+    with patch("pathlib.Path.is_relative_to", side_effect=ValueError("outside")):
+        res = apply_workspace_edit(edit)
+        assert "Skipped /outside/test.py (outside workspace root)" in res
+
+
+def test_apply_workspace_edit_does_not_exist():
+    edit = {"changes": {"file:///test.py": []}}
+    with (
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.exists", return_value=False),
+    ):
+        res = apply_workspace_edit(edit)
+        assert "Skipped /test.py (does not exist)" in res
+
+
+def test_apply_workspace_edit_append():
+    edit = {
+        "changes": {
+            "file:///test.py": [
+                {
+                    "range": {
+                        "start": {"line": 1, "character": 0},
+                        "end": {"line": 1, "character": 0},
+                    },
+                    "newText": "bar\n",
+                }
+            ]
+        }
+    }
+    with (
+        patch("mcp_servers.lsp.utils.lsp_client"),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("builtins.open", mock_open(read_data="foo\n")),
+    ):
+        res = apply_workspace_edit(edit)
+        assert "Updated /test.py" in res
 
 
 @pytest.mark.asyncio
@@ -145,6 +230,7 @@ async def test_lsp_rename_error():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),
     ):
         res = await lsp_rename("/path/to/file.py", 1, 0, "bar", ctx)
@@ -156,6 +242,7 @@ async def test_lsp_code_actions_success():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -182,6 +269,7 @@ async def test_lsp_code_actions_none():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -197,6 +285,7 @@ async def test_lsp_code_actions_error():
     ctx = MagicMock()
     with (
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),
     ):
         res = await lsp_code_actions("/path/to/file.py", 1, 0, ctx)
