@@ -29,7 +29,9 @@ def test_apply_workspace_edit_changes():
         patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo()\n")) as m_open,
     ):
         res = apply_workspace_edit(edit)
@@ -58,7 +60,9 @@ def test_apply_workspace_edit_document_changes():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="line1\nline2\nline3\n")) as m_open,
     ):
         res = apply_workspace_edit(edit)
@@ -105,7 +109,9 @@ async def test_lsp_rename_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")) as m_open,
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -134,7 +140,11 @@ async def test_lsp_rename_success():
 @pytest.mark.asyncio
 async def test_lsp_rename_not_found():
     ctx = MagicMock()
-    with patch("pathlib.Path.exists", return_value=False):
+    with (
+        patch("pathlib.Path.exists", return_value=False),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
+    ):
         res = await lsp_rename("/path/to/file.py", 1, 0, "bar", ctx)
         assert "Error: File not found" in res
 
@@ -145,6 +155,7 @@ async def test_lsp_rename_no_edits():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -169,6 +180,8 @@ async def test_cancelled_errors():
     with (
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=asyncio.CancelledError()),
         patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
     ):
         with pytest.raises(asyncio.CancelledError):
             await lsp_rename("/test.py", 1, 0, "bar", ctx)
@@ -195,6 +208,7 @@ def test_apply_workspace_edit_does_not_exist():
     edit = {"changes": {"file:///test.py": []}}
     with (
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("pathlib.Path.exists", return_value=False),
     ):
         res = apply_workspace_edit(edit)
@@ -219,6 +233,7 @@ def test_apply_workspace_edit_append():
         patch("mcp_servers.lsp.utils.lsp_client"),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
     ):
         res = apply_workspace_edit(edit)
@@ -231,6 +246,7 @@ async def test_lsp_rename_error():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),
     ):
         res = await lsp_rename("/path/to/file.py", 1, 0, "bar", ctx)
@@ -243,6 +259,7 @@ async def test_lsp_code_actions_success():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -259,7 +276,11 @@ async def test_lsp_code_actions_success():
 @pytest.mark.asyncio
 async def test_lsp_code_actions_not_found():
     ctx = MagicMock()
-    with patch("pathlib.Path.exists", return_value=False):
+    with (
+        patch("pathlib.Path.exists", return_value=False),
+        patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
+    ):
         res = await lsp_code_actions("/path/to/file.py", 1, 0, ctx)
         assert "Error: File not found" in res
 
@@ -270,6 +291,7 @@ async def test_lsp_code_actions_none():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("builtins.open", mock_open(read_data="foo\n")),
         patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
     ):
@@ -286,6 +308,7 @@ async def test_lsp_code_actions_error():
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.is_relative_to", return_value=True),
+        patch("pathlib.Path.relative_to", return_value=True),
         patch("mcp_servers.lsp.utils._sync_file_with_lsp", side_effect=Exception("mock err")),
     ):
         res = await lsp_code_actions("/path/to/file.py", 1, 0, ctx)
@@ -323,6 +346,20 @@ async def test_lsp_execute_code_action():
 
         res = await lsp_execute_code_action(99, ctx)
         assert "Error: Invalid index" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_code_actions_invalid_bounds():
+    ctx = MagicMock()
+    res = await lsp_code_actions("/path/to/file.py", 0, 0, ctx)
+    assert "Error: line must be >= 1" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_rename_invalid_bounds():
+    ctx = MagicMock()
+    res = await lsp_rename("/path/to/file.py", 1, -1, "bar", ctx)
+    assert "Error: line must be >= 1" in res
 
 
 @pytest.mark.asyncio

@@ -346,7 +346,10 @@ class LSPSession:
                         end_pos = {"line": i2, "character": 0}
                     else:
                         if old_lines:
-                            end_pos = {"line": i2 - 1, "character": len(old_lines[-1])}
+                            end_pos = {
+                                "line": i2 - 1,
+                                "character": len(old_lines[-1].rstrip("\r\n")),
+                            }
                         else:
                             end_pos = {"line": 0, "character": 0}
 
@@ -512,7 +515,7 @@ class LSPClient:
                         if any(f.endswith(ext) for ext in extensions):
                             path = Path(root) / f
                             try:
-                                mtime = path.stat().st_mtime
+                                mtime = path.stat().st_mtime_ns
                                 uri = path.as_uri()
                                 current_pass_uris.add(uri)
                                 old_mtime = last_mtimes.get(uri)

@@ -27,7 +27,7 @@ def _prepare_file(filepath: str) -> Path | str:
     return filepath_obj
 
 
-_file_mtimes: dict[str, float] = {}
+_file_mtimes: dict[str, int] = {}
 
 
 async def _sync_file_with_lsp(filepath_obj: Path) -> tuple[str, str]:
@@ -45,9 +45,9 @@ async def _sync_file_with_lsp(filepath_obj: Path) -> tuple[str, str]:
         language_id = "javascript"
 
     try:
-        mtime = filepath_obj.stat().st_mtime
+        mtime = filepath_obj.stat().st_mtime_ns
     except FileNotFoundError:
-        mtime = 0.0
+        mtime = 0
     if uri not in _file_mtimes or _file_mtimes[uri] != mtime:
         with open(filepath_obj, encoding="utf-8") as f:
             content = f.read()

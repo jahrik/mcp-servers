@@ -610,8 +610,8 @@ async def test_router_watch_loop():
         mock_walk.return_value = [("/workspace", [], ["file.py", "ignored.txt", ".git/config"])]
 
         # mock stat to return an mtime that changes
-        mock_stat_1 = MagicMock(st_mtime=1.0)
-        mock_stat_2 = MagicMock(st_mtime=2.0)
+        mock_stat_1 = MagicMock(st_mtime_ns=100)
+        mock_stat_2 = MagicMock(st_mtime_ns=200)
         # 1 call on first sleep, 1 call on second sleep
         mock_stat.side_effect = [mock_stat_1, mock_stat_2, Exception("stop")]
 
@@ -658,7 +658,7 @@ async def test_session_incremental_sync():
                 {
                     "range": {
                         "start": {"line": 1, "character": 0},
-                        "end": {"line": 1, "character": 2},
+                        "end": {"line": 1, "character": 1},
                     },
                     "text": "c\n",
                 }
@@ -752,9 +752,9 @@ async def test_watch_loop_send_fails():
 
     # Change to trigger notification
     mock_stat1 = MagicMock()
-    mock_stat1.st_mtime = 100
+    mock_stat1.st_mtime_ns = 100
     mock_stat2 = MagicMock()
-    mock_stat2.st_mtime = 200
+    mock_stat2.st_mtime_ns = 200
 
     mock_session.send_notification.side_effect = Exception("Send failed")
 
@@ -762,7 +762,7 @@ async def test_watch_loop_send_fails():
         patch("asyncio.sleep", side_effect=[None, None, asyncio.CancelledError()]),
         patch("os.walk", return_value=[("/workspace", [], ["test.py"])]),
         patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.stat", side_effect=[mock_stat1, mock_stat2]),
+        patch("pathlib.Path.stat", side_effect=[mock_stat1, mock_stat2, mock_stat2]),
     ):
         await client._watch_loop()
         assert mock_session.send_notification.call_count == 1
@@ -775,9 +775,9 @@ async def test_watch_loop_create_delete():
     client.sessions["python"] = mock_session
 
     mock_stat1 = MagicMock()
-    mock_stat1.st_mtime = 100
+    mock_stat1.st_mtime_ns = 100
     mock_stat2 = MagicMock()
-    mock_stat2.st_mtime = 200
+    mock_stat2.st_mtime_ns = 200
 
     def mock_walk_pass1(*args, **kwargs):
         return [("/workspace", [], ["test.py"])]

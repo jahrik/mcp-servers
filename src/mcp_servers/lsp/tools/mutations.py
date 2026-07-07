@@ -86,9 +86,12 @@ def apply_workspace_edit(edit: dict) -> str:
 
 async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ctx: Context) -> str:
     """Rename a symbol across the workspace and apply the edits to disk."""
-    path_obj = pathlib.Path(filepath)
-    if not path_obj.exists():
-        return f"Error: File not found {filepath}"
+    if line < 1 or character < 0:
+        return "Error: line must be >= 1 and character must be >= 0"
+
+    path_obj = utils._prepare_file(filepath)
+    if isinstance(path_obj, str):
+        return path_obj
 
     try:
         uri, language_id = await utils._sync_file_with_lsp(path_obj)
@@ -110,9 +113,12 @@ async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ct
 
 async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Context) -> str:
     """Get available code actions for a specific location. Use lsp_execute_code_action to apply one."""
-    path_obj = pathlib.Path(filepath)
-    if not path_obj.exists():
-        return f"Error: File not found {filepath}"
+    if line < 1 or character < 0:
+        return "Error: line must be >= 1 and character must be >= 0"
+
+    path_obj = utils._prepare_file(filepath)
+    if isinstance(path_obj, str):
+        return path_obj
 
     try:
         uri, language_id = await utils._sync_file_with_lsp(path_obj)
