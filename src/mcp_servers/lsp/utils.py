@@ -117,3 +117,81 @@ def _format_location(loc: dict) -> str:
         char = start.get("character", 0)
         return f"{uri}:{line}:{char}"
     return uri
+
+
+# LSP SymbolKind enum (spec §Symbol Kind) → readable name.
+_SYMBOL_KINDS = {
+    1: "File",
+    2: "Module",
+    3: "Namespace",
+    4: "Package",
+    5: "Class",
+    6: "Method",
+    7: "Property",
+    8: "Field",
+    9: "Constructor",
+    10: "Enum",
+    11: "Interface",
+    12: "Function",
+    13: "Variable",
+    14: "Constant",
+    15: "String",
+    16: "Number",
+    17: "Boolean",
+    18: "Array",
+    19: "Object",
+    20: "Key",
+    21: "Null",
+    22: "EnumMember",
+    23: "Struct",
+    24: "Event",
+    25: "Operator",
+    26: "TypeParameter",
+}
+
+
+def _symbol_kind_name(kind: int) -> str:
+    """Map an LSP SymbolKind integer to its readable name."""
+    return _SYMBOL_KINDS.get(kind, f"Kind{kind}")
+
+
+def _symbol_location(sym: dict) -> str:
+    """Best-effort ``path:line:char`` for any symbol/hierarchy-item shape.
+
+    Handles ``SymbolInformation`` (nested ``location``), ``DocumentSymbol``
+    (file-local ``range``/``selectionRange`` only), and ``CallHierarchyItem``
+    (top-level ``uri`` + ``range``).
+    """
+    loc = sym.get("location")
+    if isinstance(loc, dict):
+        return _format_location(loc)
+    if sym.get("uri") or sym.get("targetUri"):
+        return _format_location(sym)
+    range_dict = sym.get("selectionRange") or sym.get("range")
+    if range_dict:
+        start = range_dict.get("start", {})
+        return f":{start.get('line', 0) + 1}:{start.get('character', 0)}"
+    return ""
+
+
+def _format_symbols(symbols: list, indent: int = 0) -> list[str]:
+    """Render a list of LSP symbols as compact ``Kind name  path:line`` lines.
+
+    Recurses into ``DocumentSymbol.children`` with two-space indentation; a
+    ``containerName`` (flat ``SymbolInformation``) is appended as ``[container]``.
+    """
+    lines: list[str] = []
+    for sym in symbols:
+        if not isinstance(sym, dict):
+            continue
+        kind = _symbol_kind_name(sym.get("kind", 0))
+        name = sym.get("name", "?")
+        where = _symbol_location(sym)
+        container = sym.get("containerName")
+        prefix = "  " * indent
+        suffix = f"  [{container}]" if container else ""
+        lines.append(f"{prefix}{kind} {name}  {where}{suffix}")
+        children = sym.get("children")
+        if children:
+            lines.extend(_format_symbols(children, indent + 1))
+    return lines

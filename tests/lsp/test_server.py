@@ -239,6 +239,21 @@ async def test_lsp_document_symbols_success():
         assert "foo" in res
 
 
+@pytest.mark.asyncio
+async def test_lsp_document_symbols_full_detail():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
+
+        res = await lsp_document_symbols("/path/to/file.py", ctx, detail="full")
+        assert '"kind": 12' in res
+
+
 def test_format_location():
     from mcp_servers.lsp.utils import _format_location
 
@@ -363,6 +378,17 @@ async def test_lsp_workspace_symbols_success():
 
         res = await lsp_workspace_symbols("foo", ctx)
         assert "foo" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_full_detail():
+    ctx = MagicMock()
+    with patch("mcp_servers.lsp.utils.lsp_client") as mock_client:
+        mock_client.sessions = {"python": MagicMock()}
+        mock_client.send_request = AsyncMock(return_value=[{"name": "foo", "kind": 12}])
+
+        res = await lsp_workspace_symbols("foo", ctx, detail="full")
+        assert '"kind": 12' in res
 
 
 @pytest.mark.asyncio
@@ -533,6 +559,26 @@ async def test_lsp_call_hierarchy_success():
 
         res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx)
         assert "bar" in res
+
+
+@pytest.mark.asyncio
+async def test_lsp_call_hierarchy_full_detail():
+    ctx = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data="def foo(): pass")),
+        patch("mcp_servers.lsp.utils.lsp_client") as mock_client,
+    ):
+        mock_client.sync_file = AsyncMock()
+        mock_client.send_request = AsyncMock(
+            side_effect=[
+                [{"name": "foo"}],
+                [{"from": {"name": "bar"}}],
+            ]
+        )
+
+        res = await lsp_call_hierarchy("/path/to/file.py", 1, 0, "incoming", ctx, detail="full")
+        assert '"from"' in res
 
 
 @pytest.mark.asyncio

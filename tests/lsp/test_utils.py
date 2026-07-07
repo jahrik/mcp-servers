@@ -121,3 +121,72 @@ def test_prepare_file_relative_in_workspace_root(tmp_path):
         result = utils._prepare_file("top.py")
 
     assert result == target.resolve()
+
+
+def test_symbol_kind_name_known_and_unknown():
+    assert utils._symbol_kind_name(5) == "Class"
+    assert utils._symbol_kind_name(12) == "Function"
+    assert utils._symbol_kind_name(999) == "Kind999"
+
+
+def test_symbol_location_symbolinformation():
+    sym = {
+        "location": {
+            "uri": "file:///repo/mod.py",
+            "range": {"start": {"line": 9, "character": 4}},
+        }
+    }
+    assert utils._symbol_location(sym) == "/repo/mod.py:10:4"
+
+
+def test_symbol_location_callhierarchy_item():
+    item = {"uri": "file:///repo/mod.py", "range": {"start": {"line": 0, "character": 0}}}
+    assert utils._symbol_location(item) == "/repo/mod.py:1:0"
+
+
+def test_symbol_location_documentsymbol_file_local():
+    sym = {"selectionRange": {"start": {"line": 2, "character": 8}}}
+    assert utils._symbol_location(sym) == ":3:8"
+
+
+def test_symbol_location_empty():
+    assert utils._symbol_location({"name": "x"}) == ""
+
+
+def test_format_symbols_flat_with_container():
+    symbols = [
+        {
+            "name": "helper",
+            "kind": 12,
+            "location": {
+                "uri": "file:///repo/mod.py",
+                "range": {"start": {"line": 4, "character": 0}},
+            },
+            "containerName": "Outer",
+        }
+    ]
+    lines = utils._format_symbols(symbols)
+    assert lines == ["Function helper  /repo/mod.py:5:0  [Outer]"]
+
+
+def test_format_symbols_nested_children():
+    symbols = [
+        {
+            "name": "Widget",
+            "kind": 5,
+            "selectionRange": {"start": {"line": 0, "character": 6}},
+            "children": [
+                {
+                    "name": "render",
+                    "kind": 6,
+                    "selectionRange": {"start": {"line": 1, "character": 8}},
+                }
+            ],
+        }
+    ]
+    lines = utils._format_symbols(symbols)
+    assert lines == ["Class Widget  :1:6", "  Method render  :2:8"]
+
+
+def test_format_symbols_skips_non_dict():
+    assert utils._format_symbols(["not-a-dict", 42]) == []
