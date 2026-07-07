@@ -253,6 +253,7 @@ def _filter_symbols(symbols: list, kinds: list[str] | None = None, top_level: bo
 
 def _cap_and_spill(results: list, formatted_lines: list[str], max_n: int = 100) -> str:
     """Limit the returned lines to max_n, and spill the full results payload to a JSONL file."""
+    import getpass
     import logging
     import tempfile
 
@@ -268,7 +269,8 @@ def _cap_and_spill(results: list, formatted_lines: list[str], max_n: int = 100) 
     try:
         import json
 
-        spill_dir = Path(tempfile.gettempdir()) / "mcp-lsp-spill"
+        username = getpass.getuser()
+        spill_dir = Path(tempfile.gettempdir()) / f"mcp-lsp-spill-{username}"
         spill_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.NamedTemporaryFile(
@@ -278,9 +280,10 @@ def _cap_and_spill(results: list, formatted_lines: list[str], max_n: int = 100) 
                 f.write(json.dumps(item) + "\n")
             spill_path = f.name
 
+        posix_spill_path = Path(spill_path).as_posix()
         capped_lines.append(
             f"\n[Spilled full results to: {spill_path} (query with data MCP server: "
-            f"duckdb_query(query=\"SELECT * FROM read_json_auto('{spill_path}')\"))]"
+            f"duckdb_query(query=\"SELECT * FROM read_json_auto('{posix_spill_path}')\"))]"
         )
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to spill results to file: {e}")

@@ -310,6 +310,13 @@ def test_cap_and_spill():
     assert "[Spilled full results to: " in res_spill
     assert ".jsonl" in res_spill
 
+    # Assert POSIX path is used in DuckDB query suggestion (no backslashes)
+    import re
+
+    match = re.search(r"read_json_auto\('([^']+)'\)", res_spill)
+    assert match is not None
+    assert "\\" not in match.group(1)
+
     # Spill exception handling (covers lines 285-287)
     with patch("tempfile.NamedTemporaryFile", side_effect=Exception("spill error")):
         res_err = utils._cap_and_spill(results, formatted, max_n=3)

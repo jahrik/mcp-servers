@@ -864,7 +864,7 @@ async def test_lsp_session_settings_loading_and_configuration(tmp_path):
     vscode_dir.mkdir()
     settings_json = vscode_dir / "settings.json"
     settings_json.write_text(
-        '{\n  // comment\n  "python.analysis.indexing": false,\n  "python.analysis.extraPaths": ["src/my_extra"]\n}\n'
+        '{\n  // comment\n  "python.analysis.indexing": false,\n  "python.analysis.extraPaths": ["src/my_extra"],\n  "someUrl": "https://example.com/api" // trailing comment\n}\n'
     )
 
     root_uri = tmp_path.resolve().as_uri()
@@ -874,6 +874,7 @@ async def test_lsp_session_settings_loading_and_configuration(tmp_path):
     # Default python.analysis.indexing was overridden by settings.json
     assert session._get_configuration_for_section("python.analysis.indexing") is False
     assert session._get_configuration_for_section("python.analysis.extraPaths") == ["src/my_extra"]
+    assert session._get_configuration_for_section("someUrl") == "https://example.com/api"
 
     # pyproject.toml setting
     assert session._get_configuration_for_section("pyright") == {"extraPaths": ["src/lib"]}
@@ -919,6 +920,7 @@ def test_get_configuration_for_section_missed_branches():
     session._settings = {
         "python": {"analysis": {"indexing": True}},
         "python.venvPath": "/flat/venv",
+        "python.analysis.extraPaths": ["/paths"],
     }
 
     # Line 279: empty section
@@ -926,7 +928,17 @@ def test_get_configuration_for_section_missed_branches():
     assert session._get_configuration_for_section("") == session._settings
 
     # Line 291 & 296: check nested match traversing pre-existing dict
-    assert session._get_configuration_for_section("python.analysis") == {"indexing": True}
+    assert session._get_configuration_for_section("python.analysis") == {
+        "indexing": True,
+        "extraPaths": ["/paths"],
+    }
+
+    # Verify merging logic
+    merged_config = session._get_configuration_for_section("python")
+    assert merged_config == {
+        "analysis": {"indexing": True, "extraPaths": ["/paths"]},
+        "venvPath": "/flat/venv",
+    }
 
     # Line 312: not found
     assert session._get_configuration_for_section("nonexistent") is None

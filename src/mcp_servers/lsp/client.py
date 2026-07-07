@@ -278,36 +278,58 @@ class LSPSession:
         if not section:
             return self._settings
 
-        # 1. Check exact match
+        # 1. Resolve exact or nested match first
+        resolved_val = None
+        found = False
+
         if section in self._settings:
-            return self._settings[section]
+            resolved_val = self._settings[section]
+            found = True
+        else:
+            parts = section.split(".")
+            curr = self._settings
+            found_nested = True
+            for part in parts:
+                if isinstance(curr, dict) and part in curr:
+                    curr = curr[part]
+                else:
+                    found_nested = False
+                    break
+            if found_nested:
+                resolved_val = curr
+                found = True
 
-        # 2. Check nested match
-        parts = section.split(".")
-        curr = self._settings
-        found = True
-        for part in parts:
-            if isinstance(curr, dict) and part in curr:
-                curr = curr[part]
-            else:
-                found = False
-                break
-        if found:
-            return curr
+        # If it was found and is not a dictionary (e.g. a string/bool), return it immediately
+        if found and not isinstance(resolved_val, dict):
+            return resolved_val
 
-        # 3. Check flat-to-nested construction
+        # 2. Build flat-to-nested construction for this section
+        flat_val = {}
         prefix = section + "."
-        sub_settings = {}
         for k, v in self._settings.items():
             if k.startswith(prefix):
                 sub_key = k[len(prefix) :]
                 sub_parts = sub_key.split(".")
-                d = sub_settings
+                d = flat_val
                 for part in sub_parts[:-1]:
                     d = d.setdefault(part, {})
                 d[sub_parts[-1]] = v
-        if sub_settings:
-            return sub_settings
+
+        # 3. Merge the resolved dictionary and the flat-to-nested dictionary
+        if resolved_val is not None or flat_val:
+            if isinstance(resolved_val, dict):
+
+                def merge_dicts(d1: dict, d2: dict) -> dict:
+                    res = dict(d1)
+                    for key, val in d2.items():
+                        if key in res and isinstance(res[key], dict) and isinstance(val, dict):
+                            res[key] = merge_dicts(res[key], val)
+                        else:
+                            res[key] = val
+                    return res
+
+                return merge_dicts(resolved_val, flat_val)
+            return flat_val
 
         return None
 
@@ -360,8 +382,8 @@ class LSPSession:
                             content = f.read()
                         import re
 
-                        content_clean = re.sub(r"^\s*//.*$", "", content, flags=re.MULTILINE)
-                        content_clean = re.sub(r"\s*//.*$", "", content_clean)
+                        pattern = re.compile(r'("(?:\\.|[^"\\])*")|//.*')
+                        content_clean = pattern.sub(lambda m: m.group(1) or "", content)
                         vscode_data = json.loads(content_clean)
                         if isinstance(vscode_data, dict):
                             self._settings.update(vscode_data)
