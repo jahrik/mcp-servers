@@ -210,3 +210,29 @@ async def lsp_execute_code_action(index: int, ctx: Context) -> str:
         return f"Action '{action.get('title')}' executed but no edits or commands were found."
 
     return "\n".join(results)
+
+
+async def lsp_format(filepath: str, ctx: Context) -> str:
+    """Format a file using the active language server's formatting capability.
+
+    Args:
+        filepath: Absolute or workspace-relative path to the file.
+    """
+    filepath_obj = utils._prepare_file(filepath)
+    if isinstance(filepath_obj, str):
+        return filepath_obj
+
+    try:
+        uri, language_id = await utils._sync_file_with_lsp(filepath_obj)
+        params = {
+            "textDocument": {"uri": uri},
+            "options": {"tabSize": 4, "insertSpaces": True},
+        }
+        res = await utils.lsp_client.send_request(language_id, "textDocument/formatting", params)
+        if not res:
+            return "No formatting changes returned."
+        return apply_workspace_edit({"changes": {uri: res}})
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return f"Error formatting file: {e}"
