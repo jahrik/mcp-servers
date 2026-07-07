@@ -579,3 +579,44 @@ async def test_concurrent_sessions_coverage_gaps():
     assert c3.get_diagnostics("uri", "python", force=False) is None
     # force=True -> returns merged diagnostics from mock_s1
     assert c3.get_diagnostics("uri", "python", force=True) == ["diag1"]
+
+
+@pytest.mark.asyncio
+async def test_query_retry_session_not_found_after_refresh():
+    c = LSPClient()
+    c.language_commands = {"python": [["s1"], ["s2"]]}
+
+    mock_s1 = AsyncMock()
+    mock_s1.command = ["s1"]
+    mock_s1.capabilities = {}
+    mock_s1.is_alive.return_value = True
+    mock_s1.send_request = AsyncMock(side_effect=RuntimeError("broken"))
+
+    mock_s2 = AsyncMock()
+    mock_s2.command = ["s2"]
+    mock_s2.capabilities = {}
+    mock_s2.is_alive.return_value = True
+    mock_s2.send_request = AsyncMock(return_value=[{"uri": "file:///ok.py"}])
+
+    c.sessions["python"] = [mock_s1, mock_s2]
+
+    # After refresh, only s2 is available (s1 failed to restart)
+    mock_s2_fresh = AsyncMock()
+    mock_s2_fresh.command = ["s2"]
+    mock_s2_fresh.capabilities = {}
+
+    original = c._get_or_create_sessions
+    call_count = [0]
+
+    async def patched_get_or_create(lang):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return await original(lang)
+        return [mock_s2_fresh]
+
+    with patch.object(c, "_get_or_create_sessions", side_effect=patched_get_or_create):
+        result = await c.send_request("python", "textDocument/definition", {})
+
+    # s1's RuntimeError becomes an exception (no matching session on refresh),
+    # s2's original success carries through
+    assert result == [{"uri": "file:///ok.py"}]

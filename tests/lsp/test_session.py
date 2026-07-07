@@ -665,3 +665,20 @@ def test_session_is_alive():
     assert session.is_alive() is True
     session._process.returncode = 0
     assert session.is_alive() is False
+
+
+@pytest.mark.asyncio
+async def test_workspace_configuration_send_failure():
+    session = LSPSession(["dummy"])
+    session._send = AsyncMock(side_effect=RuntimeError("stdin closed"))
+
+    session._handle_payload(
+        {
+            "id": 99,
+            "method": "workspace/configuration",
+            "params": {"items": [{"section": "python"}]},
+        }
+    )
+
+    await asyncio.sleep(0.01)
+    session._send.assert_called_once()
