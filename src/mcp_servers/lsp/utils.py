@@ -13,18 +13,66 @@ if WORKSPACE_ROOT.startswith("~"):  # pragma: no cover
 lsp_client = LSPClient(root_uri=Path(WORKSPACE_ROOT).resolve().as_uri())
 
 
+def _candidate_roots() -> list[Path]:
+    """Roots a relative filepath may be resolved against.
+
+    Returns the workspace root followed by its immediate child directories that
+    look like repositories (contain a ``.git`` entry). This lets a repo-relative
+    path such as ``src/foo.py`` resolve correctly even when ``WORKSPACE_ROOT`` is
+    a parent directory holding several checked-out repositories.
+    """
+    root = Path(WORKSPACE_ROOT).resolve()
+    roots = [root]
+    try:
+        children = sorted(root.iterdir())
+    except OSError:
+        return roots
+    for child in children:
+        try:
+            if child.is_dir() and (child / ".git").exists():
+                roots.append(child)
+        except OSError:
+            continue
+    return roots
+
+
 def _prepare_file(filepath: str) -> Path | str:
     """Validate and resolve filepath. Returns Path on success, error string on failure."""
-    p = Path(filepath)
-    filepath_obj = (Path(WORKSPACE_ROOT) / p).resolve() if not p.is_absolute() else p.resolve()
     root_obj = Path(WORKSPACE_ROOT).resolve()
-    try:
-        filepath_obj.relative_to(root_obj)
-    except ValueError:
-        return f"Error: Filepath must be within the workspace root {WORKSPACE_ROOT}"
-    if not filepath_obj.exists():
-        return f"Error: File not found: {filepath_obj}"
-    return filepath_obj
+    p = Path(filepath)
+
+    if p.is_absolute():
+        filepath_obj = p.resolve()
+        try:
+            filepath_obj.relative_to(root_obj)
+        except ValueError:
+            return f"Error: Filepath must be within the workspace root {WORKSPACE_ROOT}"
+        if not filepath_obj.exists():
+            return f"Error: File not found: {filepath_obj}"
+        return filepath_obj
+
+    # Relative path: try the workspace root and each child repository. Every
+    # candidate is containment-checked, so this never escapes the workspace.
+    matches: list[Path] = []
+    for base in _candidate_roots():
+        candidate = (base / p).resolve()
+        try:
+            candidate.relative_to(root_obj)
+        except ValueError:
+            continue
+        if candidate.exists() and candidate not in matches:
+            matches.append(candidate)
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        joined = ", ".join(str(m) for m in matches)
+        return (
+            f"Error: Ambiguous filepath '{filepath}' matches multiple repositories "
+            f"({joined}). Pass an absolute path to disambiguate."
+        )
+    # No match: report against the workspace root for a stable, clear message.
+    return f"Error: File not found: {(root_obj / p)}"
 
 
 _file_mtimes: dict[str, int] = {}
