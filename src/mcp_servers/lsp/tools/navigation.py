@@ -81,7 +81,8 @@ async def lsp_definition(filepath: str, line: int, char: int, ctx: Context) -> s
         if isinstance(response, dict):
             return utils._format_location(response)
         elif isinstance(response, list):
-            return "\n".join(utils._format_location(loc) for loc in response)
+            formatted_lines = [utils._format_location(loc) for loc in response]
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -120,7 +121,8 @@ async def lsp_type_definition(filepath: str, line: int, char: int, ctx: Context)
         if isinstance(response, dict):
             return utils._format_location(response)
         elif isinstance(response, list):
-            return "\n".join(utils._format_location(loc) for loc in response)
+            formatted_lines = [utils._format_location(loc) for loc in response]
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -160,7 +162,8 @@ async def lsp_implementation(filepath: str, line: int, char: int, ctx: Context) 
         if isinstance(response, dict):
             return utils._format_location(response)
         elif isinstance(response, list):
-            return "\n".join(utils._format_location(loc) for loc in response)
+            formatted_lines = [utils._format_location(loc) for loc in response]
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -202,7 +205,8 @@ async def lsp_references(filepath: str, line: int, char: int, ctx: Context) -> s
             return "No references found at this position."
 
         if isinstance(response, list):
-            return "\n".join(utils._format_location(loc) for loc in response)
+            formatted_lines = [utils._format_location(loc) for loc in response]
+            return utils._cap_and_spill(response, response, formatted_lines)
 
         return str(response)
     except asyncio.CancelledError:
@@ -277,7 +281,8 @@ async def lsp_call_hierarchy(
         # to the item and format compactly.
         key = "from" if direction == "incoming" else "to"
         items = [call[key] for call in all_calls if isinstance(call, dict) and key in call]
-        return "\n".join(utils._format_symbols(items))
+        formatted_lines = utils._format_symbols(items)
+        return utils._cap_and_spill(all_calls, all_calls, formatted_lines)
     except asyncio.CancelledError:
         raise
     except Exception as e:

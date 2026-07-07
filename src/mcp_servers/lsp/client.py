@@ -34,6 +34,7 @@ class LSPSession:
         self._sync_kind: int = 1  # 1 = Full, 2 = Incremental
         self._diagnostics: dict[str, list[Any]] = {}
         self.last_used = time.monotonic()
+        self._settings: dict[str, Any] = {}
 
     def update_activity(self):
         self.last_used = time.monotonic()
@@ -190,6 +191,19 @@ class LSPSession:
                     self._diagnostics[uri] = params.get("diagnostics", [])
                 return
 
+            if method == "workspace/configuration" and req_id is not None:
+                params = payload.get("params", {})
+                items = params.get("items", [])
+                result = []
+                for item in items:
+                    section = item.get("section")
+                    val = self._get_configuration_for_section(section)
+                    result.append(val)
+
+                response = {"jsonrpc": "2.0", "id": req_id, "result": result}
+                asyncio.create_task(self._send(response))
+                return
+
             if req_id is not None:
                 # We don't implement client-side methods yet, but we MUST reply
                 error_response = {
@@ -259,8 +273,125 @@ class LSPSession:
 
         await self._send(payload)
 
+    def _get_configuration_for_section(self, section: str | None) -> Any:
+        """Resolve settings for a specific section, supporting flat and nested structures."""
+        if not section:
+            return self._settings
+
+        # 1. Resolve exact or nested match first
+        resolved_val = None
+        found = False
+
+        if section in self._settings:
+            resolved_val = self._settings[section]
+            found = True
+        else:
+            parts = section.split(".")
+            curr = self._settings
+            found_nested = True
+            for part in parts:
+                if isinstance(curr, dict) and part in curr:
+                    curr = curr[part]
+                else:
+                    found_nested = False
+                    break
+            if found_nested:
+                resolved_val = curr
+                found = True
+
+        # If it was found and is not a dictionary (e.g. a string/bool), return it immediately
+        if found and not isinstance(resolved_val, dict):
+            return resolved_val
+
+        # 2. Build flat-to-nested construction for this section
+        flat_val = {}
+        prefix = section + "."
+        for k, v in self._settings.items():
+            if k.startswith(prefix):
+                sub_key = k[len(prefix) :]
+                sub_parts = sub_key.split(".")
+                d = flat_val
+                for part in sub_parts[:-1]:
+                    d = d.setdefault(part, {})
+                d[sub_parts[-1]] = v
+
+        # 3. Merge the resolved dictionary and the flat-to-nested dictionary
+        if resolved_val is not None or flat_val:
+            if isinstance(resolved_val, dict):
+
+                def merge_dicts(d1: dict, d2: dict) -> dict:
+                    res = dict(d1)
+                    for key, val in d2.items():
+                        if key in res and isinstance(res[key], dict) and isinstance(val, dict):
+                            res[key] = merge_dicts(res[key], val)
+                        else:
+                            res[key] = val
+                    return res
+
+                return merge_dicts(resolved_val, flat_val)
+            return flat_val
+
+        return None
+
     async def initialize(self, root_uri: str) -> Any:
         """Perform the LSP initialize handshake."""
+        # Load local workspace settings
+        self._settings = {
+            "python.analysis.indexing": True,
+        }
+
+        try:
+            from pathlib import Path
+            from urllib.parse import unquote
+
+            if root_uri.startswith("file://"):
+                root_path = Path(unquote(root_uri[7:]))
+
+                # Check for .venv to auto-detect python path
+                venv_dir = root_path / ".venv"
+                if venv_dir.is_dir():
+                    import sys
+
+                    python_bin = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+                    python_path = venv_dir / python_bin
+                    if python_path.is_file():
+                        self._settings["python.pythonPath"] = str(python_path)
+                    self._settings["python.venvPath"] = str(root_path)
+                    self._settings["python.venv"] = ".venv"
+
+                # Load pyproject.toml
+                pyproject = root_path / "pyproject.toml"
+                if pyproject.is_file():
+                    try:
+                        import tomllib
+
+                        with open(pyproject, "rb") as f:
+                            toml_data = tomllib.load(f)
+                        tool = toml_data.get("tool", {})
+                        pyright_settings = tool.get("pyright", {})
+                        if isinstance(pyright_settings, dict):
+                            self._settings["pyright"] = pyright_settings
+                    except Exception as e:
+                        logger.warning(f"Failed to load pyproject.toml settings: {e}")
+
+                # Load vscode settings
+                vscode_settings = root_path / ".vscode" / "settings.json"
+                if vscode_settings.is_file():
+                    try:
+                        with open(vscode_settings, encoding="utf-8") as f:
+                            content = f.read()
+                        import re
+
+                        pattern = re.compile(r'("(?:\\.|[^"\\])*")|//.*')
+                        content_clean = pattern.sub(lambda m: m.group(1) or "", content)
+                        vscode_data = json.loads(content_clean)
+                        if isinstance(vscode_data, dict):
+                            self._settings.update(vscode_data)
+                    except Exception as e:
+                        logger.warning(f"Failed to load VS Code settings: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to load workspace configuration: {e}")
+
         params = {
             "processId": None,
             "rootUri": root_uri,
@@ -268,6 +399,7 @@ class LSPSession:
                 "workspace": {
                     "workspaceEdit": {"documentChanges": True},
                     "symbol": {"dynamicRegistration": False},
+                    "configuration": True,
                 },
                 "textDocument": {
                     "synchronization": {

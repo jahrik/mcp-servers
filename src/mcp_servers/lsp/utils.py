@@ -215,3 +215,106 @@ def _format_symbols(symbols: list, indent: int = 0) -> list[str]:
         if children:
             lines.extend(_format_symbols(children, indent + 1))
     return lines
+
+
+def _filter_symbols(symbols: list, kinds: list[str] | None = None, top_level: bool = False) -> list:
+    """Filter list of LSP symbols by kind and/or top-level constraint."""
+    filtered = []
+    kinds_lower = [k.lower() for k in kinds] if kinds is not None else None
+    for sym in symbols:
+        if not isinstance(sym, dict):
+            continue
+        s = dict(sym)
+        kind_name = _symbol_kind_name(s.get("kind", 0))
+
+        # If top_level is True, we strip children from this level
+        if top_level and "children" in s:
+            s.pop("children")
+
+        # Check if it matches kinds
+        matches_kind = True
+        if kinds_lower is not None:
+            matches_kind = kind_name.lower() in kinds_lower
+
+        if matches_kind:
+            # If not top_level, we recursively filter children
+            if not top_level and "children" in s and isinstance(s["children"], list):
+                s["children"] = _filter_symbols(s["children"], kinds, top_level)
+            filtered.append(s)
+        elif not top_level and "children" in s and isinstance(s["children"], list):
+            # If it didn't match the kind, but we are not top_level,
+            # we check if any children match. If they do, we keep this container.
+            child_matches = _filter_symbols(s["children"], kinds, top_level)
+            if child_matches:
+                s["children"] = child_matches
+                filtered.append(s)
+    return filtered
+
+
+def _cap_and_spill(
+    raw_results: list,
+    display_items: list,
+    formatted_lines: list[str],
+    max_n: int = 100,
+) -> str:
+    """Limit the returned lines to max_n, and spill the full results payload to a JSONL file.
+
+    Both the capping decision and the 'more' count are driven by the number of display items.
+    """
+    import getpass
+    import logging
+    import tempfile
+
+    total_items = len(display_items)
+    if total_items <= max_n:
+        return "\n".join(formatted_lines)
+
+    # We need to spill. Let's write the full raw_results payload.
+    try:
+        import json
+
+        username = getpass.getuser()
+        spill_dir = Path(tempfile.gettempdir()) / f"mcp-lsp-spill-{username}"
+        spill_dir.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.NamedTemporaryFile(
+            suffix=".jsonl", dir=spill_dir, delete=False, mode="w", encoding="utf-8"
+        ) as f:
+            for item in raw_results:
+                f.write(json.dumps(item) + "\n")
+            spill_path = f.name
+
+        kept_lines = []
+        item_count = 0
+        for line in formatted_lines:
+            if item_count >= max_n:
+                break
+            kept_lines.append(line)
+            # Lines starting with "# " are headers (e.g. language name in workspace symbols)
+            # and do not correspond to individual symbol items.
+            if not line.startswith("# "):
+                item_count += 1
+
+        more_count = total_items - max_n
+        kept_lines.append(
+            f"... {more_count} more (narrow with kinds/top_level or query the full spill file)"
+        )
+
+        posix_spill_path = Path(spill_path).as_posix()
+        kept_lines.append(
+            f"\n[Spilled full results to: {spill_path} (query with data MCP server: "
+            f"duckdb_query(query=\"SELECT * FROM read_json_auto('{posix_spill_path}')\"))]"
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to spill results to file: {e}")
+        kept_lines = []
+        item_count = 0
+        for line in formatted_lines:
+            if item_count >= max_n:
+                break
+            kept_lines.append(line)
+            if not line.startswith("# "):
+                item_count += 1
+        kept_lines.append(f"\n[Error: Failed to write full spill file: {e}]")
+
+    return "\n".join(kept_lines)
