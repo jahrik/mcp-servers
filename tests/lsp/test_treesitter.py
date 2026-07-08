@@ -493,6 +493,24 @@ class TestEdgeCases:
         assert len(results) == 1
         assert "def standalone" in results[0]["text"]
 
+    def test_extract_deduplicates_same_def_node(self, python_file):
+        """Covers the `def_node.id in seen_ids` guard in extract_nodes."""
+        import tree_sitter as ts
+
+        tree, lang = parse_file(python_file)
+        source = python_file.read_bytes()
+        orig_matches = ts.QueryCursor.matches
+
+        def patched_matches(self, node):
+            # Emit every match twice so the same def node is seen more than once.
+            results = orig_matches(self, node)
+            return results + results
+
+        with patch.object(ts.QueryCursor, "matches", patched_matches):
+            results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        assert len(results) == 1
+        assert "def standalone" in results[0]["text"]
+
 
 class TestToolFunctions:
     """Test the MCP tool wrappers."""
