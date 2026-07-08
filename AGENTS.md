@@ -83,4 +83,4 @@ possible, and only at a true I/O boundary (subprocess spawn, the LSP child proce
 real objects everywhere else — real files under `tmp_path`, a real in-memory DuckDB, real git
 repos in a temp dir, and `pytest-httpx` for the GitHub HTTP layer. Tests that drive a real
 language server are marked `@pytest.mark.integration` and skip when it is absent; CI installs
-`pyright` so they run for real there.
+`ty` so they run for real there.

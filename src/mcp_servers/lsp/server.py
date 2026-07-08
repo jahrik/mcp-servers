@@ -1,6 +1,6 @@
 """MCP server that wraps an external LSP (Language Server Protocol) process.
 
-This server provides tools to query an underlying LSP server (e.g. pyright)
+This server provides tools to query an underlying LSP server (e.g. ty)
 for hover information, diagnostics, and more.
 """
 

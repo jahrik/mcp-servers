@@ -81,7 +81,13 @@ async def lsp_workspace_symbols(args: WorkspaceSymbolsArgs, ctx: Context) -> str
                 pass
 
         if not results:
-            return f"No workspace symbols found matching query '{args.query}'."
+            # Most language servers without workspace indexing (e.g. Microsoft
+            # pyright) return nothing for workspace/symbol. Fall back to a
+            # tree-sitter scan so the tool still finds top-level declarations.
+            fallback = utils._treesitter_workspace_symbols(args.query)
+            if not fallback:
+                return f"No workspace symbols found matching query '{args.query}'."
+            results = [{"tree-sitter": fallback}]
 
         # Filter results
         filtered_results = []

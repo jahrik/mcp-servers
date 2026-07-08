@@ -1,7 +1,7 @@
 # lsp
 
-The `lsp` server fronts real Language Server Protocol processes (`pyright`, `gopls`,
-`rust-analyzer`, `typescript-language-server`) and exposes their semantic intelligence as MCP
+The `lsp` server fronts real Language Server Protocol processes (`ty` + `ruff` for Python,
+`gopls`, `rust-analyzer`, `typescript-language-server`) and exposes their semantic intelligence as MCP
 tools. Agents get IDE-grade answers about what a symbol *means* and connects to — resolving
 imports, types, and scope — without managing JSON-RPC lifecycles, subprocesses, or document
 syncing themselves.
@@ -122,11 +122,11 @@ Each takes `filepath` (absolute or workspace-relative) and an optional `language
 
 ## Configuration
 
-- `MCP_LSP_COMMAND` (default: `"pyright-langserver --stdio"`)
-  Command for the **Python** language server, parsed shell-style so quoted arguments
-  (e.g. `"/path with spaces/langserver" --stdio`) are supported. Other languages use their
-  standard binaries (`gopls`, `rust-analyzer`, `typescript-language-server --stdio`), which must
-  be on `PATH`.
+- `MCP_LSP_COMMAND` (default: `"ty server"`)
+  Overrides the **Python** language server command, parsed shell-style so quoted arguments
+  (e.g. `"/path with spaces/langserver" --stdio`) are supported. By default Python runs both
+  `ty server` (types + navigation) and `ruff server` (lint); other languages use their standard
+  binaries (`gopls`, `rust-analyzer`, `typescript-language-server --stdio`), which must be on `PATH`.
 - `MCP_LSP_ROOT` (default: current working directory)
   Root directory the language servers analyze. Tilde (`~`) is expanded. May be a parent of several
   repositories — see [Path resolution](#path-resolution).
@@ -147,10 +147,13 @@ Each takes `filepath` (absolute or workspace-relative) and an optional `language
 
 ## Known limitations
 
-- **On-demand analysis (pyright):** pyright only fully analyzes files opened via a tool call, so
-  `lsp_workspace_symbols` and cross-file `lsp_references` can be incomplete until the relevant
-  files have been touched. Enabling the language server's own project-wide index is the intended
-  fix.
+- **On-demand analysis:** the Python language server fully analyzes only files opened via a tool
+  call, so cross-file `lsp_references` can be incomplete until the relevant files have been touched.
+- **Workspace symbols without an index:** language servers that don't build a project-wide index
+  (Microsoft `pyright`, and some `ty` versions) return nothing for `workspace/symbol`. When the LSP
+  yields no results, `lsp_workspace_symbols` transparently falls back to a tree-sitter scan of the
+  workspace, matching top-level class/function declarations by name so the tool still works
+  regardless of backend.
 - **Verbose symbol sets:** language servers report every local variable, so document symbols for a
   large file can still be long even in compact form; server-side kind/top-level filtering is
   planned.

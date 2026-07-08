@@ -20,7 +20,7 @@ class LSPClient:
         self.sessions: dict[str, list[LSPSession | None]] = {}
         self.language_commands = {
             "python": [
-                ["pyright-langserver", "--stdio"],
+                ["ty", "server"],
                 ["ruff", "server"],
             ],
             "go": [["gopls"]],
