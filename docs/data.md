@@ -6,17 +6,18 @@ working memory outside the context window. This is not a general database connec
 an agent tool for pushing computation to the data and pulling back only the answer rows.
 
 DuckDB is the engine, which is why the tools keep the `duckdb_*` prefix: the name tells the
-agent which SQL dialect applies and that file-query idioms like `SELECT * FROM 'file.csv'`
-work. Registered as `data`, installed as `mcp-data`.
+agent which SQL dialect applies and that file-query idioms like `SELECT * FROM 'file.csv'` work.
 
-## Features
+Installed as `mcp-data`; registered as `data`.
 
-- **Dynamic Database Creation**: Build in-memory or persistent databases on the fly to store intermediate results, scraped data, or state.
-- **Direct File Querying**: Query large CSV, JSON, JSONL, and Parquet files directly using SQL without having to load the whole file into the agent context (e.g., `SELECT * FROM 'logs.json' WHERE level = 'error'`).
-- **Connection Caching**: Automatically retains `:memory:` states, schemas, and loaded extensions across separate tool calls.
-- **Concurrency & Locking**: Uses fine-grained locks per database path to safely serialize concurrent operations.
-- **Resource Controls**: Configurable memory limits and external network access controls to prevent system instability.
-- **Error Diagnostics**: Error messages include proactive suggestions to troubleshoot missing tables, incorrect file paths, or syntax issues.
+## Behavior
+
+- **Direct file querying** — query large CSV, JSON, JSONL, and Parquet files with SQL without loading them into the agent context (e.g. `SELECT * FROM 'logs.json' WHERE level = 'error'`).
+- **Scratch databases** — build in-memory or persistent databases on the fly to hold intermediate results or state across tool calls.
+- **Connection caching** — `:memory:` state, schemas, and loaded extensions are retained across separate calls.
+- **Concurrency** — a per-database-path lock serializes concurrent operations.
+- **Resource controls** — configurable memory limit, query timeout, and external-access toggle (see [Configuration](#configuration)).
+- **Error diagnostics** — errors include suggestions for missing tables, wrong file paths, or syntax issues.
 
 ## Tools
 
@@ -69,9 +70,9 @@ Result cells are rendered to JSON as follows:
 - `LIST`/`STRUCT`/`MAP` → JSON arrays/objects
 - `UUID`, `INTERVAL`, and any other type → their string representation
 
-## Usage Examples
+## Usage examples
 
-### 1. In-Memory Key-Value State Storage
+### 1. In-memory key-value state
 Create a schema and store key-value data in the cached in-memory database:
 ```sql
 CREATE TABLE IF NOT EXISTS kv_store (key VARCHAR PRIMARY KEY, value JSON);
@@ -79,13 +80,13 @@ INSERT OR REPLACE INTO kv_store VALUES ('preferences', '{"theme": "dark"}');
 SELECT * FROM kv_store;
 ```
 
-### 2. Querying a Local File
+### 2. Querying a local file
 Inspect and query a local CSV file directly from the filesystem:
 ```sql
 SELECT count(*), avg(salary) FROM '/path/to/employees.csv' WHERE department = 'Engineering';
 ```
 
-### 3. Federated Query
+### 3. Federated query
 Join a local CSV file with an existing SQLite database file (via the `sqlite` extension):
 ```sql
 INSTALL sqlite;
@@ -97,7 +98,7 @@ FROM '/path/to/offline_registrations.csv' csv
 JOIN sqlite_db.users ON csv.id = sqlite_db.users.id;
 ```
 
-### 4. Vector / Semantic Memory Search
+### 4. Vector / semantic memory search
 Using the native `vss` extension for vector embeddings:
 ```sql
 INSTALL vss;
