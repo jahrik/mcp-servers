@@ -5,19 +5,17 @@ import asyncio
 from mcp.server.fastmcp import Context
 
 from mcp_servers.lsp import utils
+from mcp_servers.lsp.models.schemas import FilePathArgs
 
 
-async def lsp_diagnostics(filepath: str, ctx: Context) -> str:
+async def lsp_diagnostics(args: FilePathArgs, ctx: Context) -> str:
     """Get live syntax and type-checking diagnostics for a file (IDE problems panel).
 
     Prefer over running a linter/type-checker in the shell to check a single
     file: returns the language server's errors and warnings with positions,
     already in sync with your latest edits.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
