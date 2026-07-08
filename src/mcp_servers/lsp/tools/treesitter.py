@@ -3,7 +3,7 @@ from __future__ import annotations
 from mcp_servers.lsp import utils
 from mcp_servers.lsp.treesitter import (
     InvalidNodeTypeError,
-    extract_node,
+    extract_nodes,
     get_outline,
     get_scope_at_position,
     parse_file,
@@ -115,14 +115,22 @@ async def ts_extract(filepath: str, node_type: str, name: str, language: str | N
 
     source = filepath_obj.read_bytes()
     try:
-        result = extract_node(tree, lang, source, node_type, name)
+        results = extract_nodes(tree, lang, source, node_type, name)
     except InvalidNodeTypeError as e:
         return f"Error: {e}"
-    if result is None:
+    if not results:
         return f"No {node_type} named '{name}' found."
 
-    header = f"# {filepath_obj}:{result['start_line']}-{result['end_line']}"
-    return f"{header}\n{result['text']}"
+    blocks = [f"# {filepath_obj}:{r['start_line']}-{r['end_line']}\n{r['text']}" for r in results]
+    if len(blocks) == 1:
+        return blocks[0]
+
+    lines_list = ", ".join(str(r["start_line"]) for r in results)
+    note = (
+        f"# {len(blocks)} {node_type} nodes named '{name}' found "
+        f"(at lines {lines_list}); showing all:"
+    )
+    return note + "\n" + "\n\n".join(blocks)
 
 
 async def ts_scope_at_position(

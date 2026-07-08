@@ -79,6 +79,22 @@ def parse_file(filepath: Path, language: str | None = None) -> tuple[ts.Tree, st
     return tree, language
 
 
+def _end_line(node: ts.Node) -> int:
+    """1-indexed last line a node actually spans.
+
+    A tree-sitter ``end_point`` is exclusive: it points just past the node's
+    final byte. When that lands at column 0 of a line, the node's last content
+    is on the *previous* line -- this is the case for the root node of any file
+    that ends with a trailing newline, whose ``end_point`` is ``(line_count, 0)``.
+    Naively adding 1 to the end row would then overshoot by one line, so guard
+    that boundary case.
+    """
+    end_row, end_col = node.end_point
+    if end_col == 0 and end_row > node.start_point[0]:
+        return end_row
+    return end_row + 1
+
+
 _MAX_QUERY_RESULTS = 1000
 
 
@@ -102,7 +118,7 @@ def run_query(
                         "text": (node.text or b"").decode("utf-8", errors="replace"),
                         "start_line": node.start_point[0] + 1,
                         "start_char": node.start_point[1],
-                        "end_line": node.end_point[0] + 1,
+                        "end_line": _end_line(node),
                         "end_char": node.end_point[1],
                     }
                 )
@@ -174,7 +190,7 @@ def get_outline(tree: ts.Tree, language: str) -> list[dict]:
                 "kind": kind,
                 "name": (name_node.text or b"").decode("utf-8", errors="replace"),
                 "start_line": def_node.start_point[0] + 1,
-                "end_line": def_node.end_point[0] + 1,
+                "end_line": _end_line(def_node),
                 "start_char": def_node.start_point[1],
             }
         )
@@ -235,7 +251,7 @@ def get_scope_at_position(tree: ts.Tree, language: str, line: int, char: int) ->
                     "type": current.type,
                     "name": _node_name(current),
                     "start_line": current.start_point[0] + 1,
-                    "end_line": current.end_point[0] + 1,
+                    "end_line": _end_line(current),
                 }
             )
         current = current.parent
@@ -251,10 +267,16 @@ class InvalidNodeTypeError(ValueError):
 _VALID_NODE_TYPE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def extract_node(
+def extract_nodes(
     tree: ts.Tree, language: str, source: bytes, node_type: str, name: str
-) -> dict | None:
-    """Find and extract a named node's full text."""
+) -> list[dict]:
+    """Find and extract the full text of every ``node_type`` node named ``name``.
+
+    A name can be ambiguous -- e.g. an ``__init__`` method defined on several
+    classes, or two same-named functions -- so every match is returned in source
+    order. Returning only the first would silently hide the rest and risk handing
+    back the wrong symbol.
+    """
     if not _VALID_NODE_TYPE.match(node_type):
         raise InvalidNodeTypeError(
             f"Invalid node type '{node_type}': must be lowercase letters, digits, and underscores"
@@ -271,20 +293,29 @@ def extract_node(
     cursor = ts.QueryCursor(query)
     matches = cursor.matches(tree.root_node)
 
+    results: list[dict] = []
+    seen_ids: set[int] = set()
     for _pattern_idx, captures in matches:
         name_nodes = captures.get("name")
         def_nodes = captures.get("def")
         if not name_nodes or not def_nodes:
             continue
         name_node = name_nodes[0]
-        if (name_node.text or b"").decode("utf-8", errors="replace") == name:
-            def_node = def_nodes[0]
-            text = source[def_node.start_byte : def_node.end_byte].decode("utf-8", errors="replace")
-            return {
+        if (name_node.text or b"").decode("utf-8", errors="replace") != name:
+            continue
+        def_node = def_nodes[0]
+        if def_node.id in seen_ids:
+            continue
+        seen_ids.add(def_node.id)
+        text = source[def_node.start_byte : def_node.end_byte].decode("utf-8", errors="replace")
+        results.append(
+            {
                 "text": text,
                 "start_line": def_node.start_point[0] + 1,
-                "end_line": def_node.end_point[0] + 1,
+                "end_line": _end_line(def_node),
                 "start_char": def_node.start_point[1],
                 "end_char": def_node.end_point[1],
             }
-    return None
+        )
+    results.sort(key=lambda r: (r["start_line"], r["start_char"]))
+    return results
