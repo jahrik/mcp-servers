@@ -18,16 +18,6 @@ from mcp_servers.github.tools.reviews import (
 )
 
 
-@pytest.fixture(autouse=True)
-def mock_token(monkeypatch):
-    import mcp_servers.github.client
-
-    async def get_token():
-        return "mock-token"
-
-    monkeypatch.setattr(mcp_servers.github.client, "get_installation_token", get_token)
-
-
 @pytest.mark.asyncio
 async def test_gh_review_comments_list(httpx_mock):
     httpx_mock.add_response(

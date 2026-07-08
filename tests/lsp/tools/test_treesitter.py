@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from mcp_servers.lsp.treesitter import (
     detect_language,
@@ -13,11 +13,6 @@ from mcp_servers.lsp.treesitter import (
     parse_file,
     run_query,
 )
-
-
-def _patch_root(root: Path):
-    return patch("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(root))
-
 
 PYTHON_SOURCE = """\
 class Greeter:
@@ -415,24 +410,20 @@ class TestAdditionalLanguages:
 
 
 class TestEdgeCases:
-    def test_outline_unsupported_language_raises(self, python_file):
+    def test_outline_unsupported_language_raises(self, python_file, mocker):
         from mcp_servers.lsp.treesitter import _OUTLINE_QUERIES
 
         tree, _ = parse_file(python_file)
-        with (
-            patch.dict(_OUTLINE_QUERIES, clear=True),
-            pytest.raises(ValueError, match="No outline query"),
-        ):
+        mocker.patch.dict(_OUTLINE_QUERIES, clear=True)
+        with pytest.raises(ValueError, match="No outline query"):
             get_outline(tree, "python")
 
-    def test_scope_unsupported_language_raises(self, python_file):
+    def test_scope_unsupported_language_raises(self, python_file, mocker):
         from mcp_servers.lsp.treesitter import _SCOPE_NODE_TYPES
 
         tree, _ = parse_file(python_file)
-        with (
-            patch.dict(_SCOPE_NODE_TYPES, clear=True),
-            pytest.raises(ValueError, match="No scope info"),
-        ):
+        mocker.patch.dict(_SCOPE_NODE_TYPES, clear=True)
+        with pytest.raises(ValueError, match="No scope info"):
             get_scope_at_position(tree, "python", 0, 0)
 
     def test_outline_keeps_distinct_same_named_symbols(self, tmp_path):
@@ -443,17 +434,17 @@ class TestEdgeCases:
         names = [s["name"] for s in symbols]
         assert names.count("foo") == 2
 
-    def test_outline_skips_empty_captures(self, python_file):
+    def test_outline_skips_empty_captures(self, python_file, mocker):
         """Covers the `not name_nodes or not def_nodes` guard in get_outline."""
         from mcp_servers.lsp import treesitter as ts_mod
 
         tree, lang = parse_file(python_file)
 
-        with patch.dict(ts_mod._OUTLINE_QUERIES, {"python": "(identifier) @other"}):
-            symbols = ts_mod.get_outline(tree, "python")
+        mocker.patch.dict(ts_mod._OUTLINE_QUERIES, {"python": "(identifier) @other"})
+        symbols = ts_mod.get_outline(tree, "python")
         assert symbols == []
 
-    def test_outline_deduplicates_same_def_node(self, python_file):
+    def test_outline_deduplicates_same_def_node(self, python_file, mocker):
         """Covers the `def_node.id in seen_ids` guard in get_outline."""
         import tree_sitter as ts
 
@@ -466,8 +457,8 @@ class TestEdgeCases:
                 results = results + [results[0]]
             return results
 
-        with patch.object(ts.QueryCursor, "matches", patched_matches):
-            symbols = get_outline(tree, lang)
+        mocker.patch.object(ts.QueryCursor, "matches", patched_matches)
+        symbols = get_outline(tree, lang)
         names = [s["name"] for s in symbols]
         assert names.count("Greeter") == 1
 
@@ -477,7 +468,7 @@ class TestEdgeCases:
         results = extract_nodes(tree, lang, source, "function_definition", "nonexistent_xyz")
         assert results == []
 
-    def test_extract_node_query_returns_partial_captures(self, python_file):
+    def test_extract_node_query_returns_partial_captures(self, python_file, mocker):
         """Covers the `not name_nodes or not def_nodes` guard in extract_nodes."""
         import tree_sitter as ts
 
@@ -490,12 +481,12 @@ class TestEdgeCases:
             # Return a match with empty captures to trigger the guard
             return [(0, {"name": [], "def": []})] + orig_matches(self, node)
 
-        with patch.object(ts.QueryCursor, "matches", patched_matches):
-            results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        mocker.patch.object(ts.QueryCursor, "matches", patched_matches)
+        results = extract_nodes(tree, lang, source, "function_definition", "standalone")
         assert len(results) == 1
         assert "def standalone" in results[0]["text"]
 
-    def test_extract_deduplicates_same_def_node(self, python_file):
+    def test_extract_deduplicates_same_def_node(self, python_file, mocker):
         """Covers the `def_node.id in seen_ids` guard in extract_nodes."""
         import tree_sitter as ts
 
@@ -508,8 +499,8 @@ class TestEdgeCases:
             results = orig_matches(self, node)
             return results + results
 
-        with patch.object(ts.QueryCursor, "matches", patched_matches):
-            results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        mocker.patch.object(ts.QueryCursor, "matches", patched_matches)
+        results = extract_nodes(tree, lang, source, "function_definition", "standalone")
         assert len(results) == 1
         assert "def standalone" in results[0]["text"]
 
@@ -518,82 +509,102 @@ class TestToolFunctions:
     """Test the MCP tool wrappers."""
 
     @pytest.fixture(autouse=True)
-    def _setup_workspace(self, tmp_path):
+    def _setup_workspace(self, tmp_path, monkeypatch):
         self.tmp_path = tmp_path
         self.python_file = tmp_path / "example.py"
         self.python_file.write_text(PYTHON_SOURCE)
-        self._patcher = _patch_root(tmp_path)
-        self._patcher.start()
-
-    @pytest.fixture(autouse=True)
-    def _teardown(self):
-        yield
-        self._patcher.stop()
+        monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
 
     @pytest.mark.asyncio
     async def test_ts_query_tool(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
         result = await ts_query(
-            str(self.python_file), "(function_definition name: (identifier) @name)"
+            TsQueryArgs(
+                filepath=str(self.python_file),
+                query="(function_definition name: (identifier) @name)",
+            )
         )
         assert "greet" in result
         assert "standalone" in result
 
     @pytest.mark.asyncio
     async def test_ts_query_bad_file(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
-        result = await ts_query(str(self.tmp_path / "nope.py"), "(identifier) @id")
+        result = await ts_query(
+            TsQueryArgs(filepath=str(self.tmp_path / "nope.py"), query="(identifier) @id")
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_query_bad_pattern(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
-        result = await ts_query(str(self.python_file), "(((invalid_syntax")
+        result = await ts_query(
+            TsQueryArgs(filepath=str(self.python_file), query="(((invalid_syntax")
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_query_no_matches(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
-        result = await ts_query(str(self.python_file), "(while_statement) @loop")
+        result = await ts_query(
+            TsQueryArgs(filepath=str(self.python_file), query="(while_statement) @loop")
+        )
         assert result == "No matches found."
 
     @pytest.mark.asyncio
     async def test_ts_outline_tool(self):
+        from mcp_servers.lsp.models.schemas import TsOutlineArgs
         from mcp_servers.lsp.tools.treesitter import ts_outline
 
-        result = await ts_outline(str(self.python_file))
+        result = await ts_outline(TsOutlineArgs(filepath=str(self.python_file)))
         assert "Greeter" in result
         assert "greet" in result
         assert "standalone" in result
 
     @pytest.mark.asyncio
     async def test_ts_outline_bad_file(self):
+        from mcp_servers.lsp.models.schemas import TsOutlineArgs
         from mcp_servers.lsp.tools.treesitter import ts_outline
 
-        result = await ts_outline(str(self.tmp_path / "nope.py"))
+        result = await ts_outline(TsOutlineArgs(filepath=str(self.tmp_path / "nope.py")))
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_extract_tool(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
-        result = await ts_extract(str(self.python_file), "function_definition", "standalone")
+        result = await ts_extract(
+            TsExtractArgs(
+                filepath=str(self.python_file), node_type="function_definition", name="standalone"
+            )
+        )
         assert "def standalone" in result
         assert "return -x" in result
 
     @pytest.mark.asyncio
     async def test_ts_extract_not_found(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
-        result = await ts_extract(str(self.python_file), "function_definition", "nope")
+        result = await ts_extract(
+            TsExtractArgs(
+                filepath=str(self.python_file), node_type="function_definition", name="nope"
+            )
+        )
         assert "No function_definition named 'nope' found" in result
 
     @pytest.mark.asyncio
     async def test_ts_extract_ambiguous_shows_all(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
         f = self.tmp_path / "dup.py"
@@ -606,142 +617,170 @@ class TestToolFunctions:
             "    def __init__(self):\n"
             "        self.b = 2\n"
         )
-        result = await ts_extract(str(f), "function_definition", "__init__")
+        result = await ts_extract(
+            TsExtractArgs(filepath=str(f), node_type="function_definition", name="__init__")
+        )
         assert "2 function_definition nodes named '__init__' found" in result
         assert "self.a = 1" in result
         assert "self.b = 2" in result
 
     @pytest.mark.asyncio
     async def test_ts_scope_module_end_line(self):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
 
         f = self.tmp_path / "trailing.py"
         f.write_text("def a():\n    return 1\ndef b():\n    return 2\n")
-        result = await ts_scope_at_position(str(f), 3, 0)
+        result = await ts_scope_at_position(TsScopeArgs(filepath=str(f), line=3, char=0))
         assert "module  (lines 1-4)" in result
 
     @pytest.mark.asyncio
     async def test_ts_scope_tool(self):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
 
-        result = await ts_scope_at_position(str(self.python_file), 2, 8)
+        result = await ts_scope_at_position(
+            TsScopeArgs(filepath=str(self.python_file), line=2, char=8)
+        )
         assert "module" in result
         assert "class_definition" in result
         assert "Greeter" in result
 
     @pytest.mark.asyncio
     async def test_ts_scope_bad_line(self):
-        from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
 
-        result = await ts_scope_at_position(str(self.python_file), 0, 0)
-        assert "Error" in result
+        with pytest.raises(ValidationError):
+            TsScopeArgs(filepath=str(self.python_file), line=0, char=0)
 
     @pytest.mark.asyncio
     async def test_ts_scope_bad_file(self):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
 
-        result = await ts_scope_at_position(str(self.tmp_path / "nope.py"), 1, 0)
+        result = await ts_scope_at_position(
+            TsScopeArgs(filepath=str(self.tmp_path / "nope.py"), line=1, char=0)
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_outline_unsupported_ext(self):
+        from mcp_servers.lsp.models.schemas import TsOutlineArgs
         from mcp_servers.lsp.tools.treesitter import ts_outline
 
         f = self.tmp_path / "data.csv"
         f.write_text("a,b,c")
-        result = await ts_outline(str(f))
+        result = await ts_outline(TsOutlineArgs(filepath=str(f)))
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_query_unsupported_ext(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
         f = self.tmp_path / "data.csv"
         f.write_text("a,b,c")
-        result = await ts_query(str(f), "(identifier) @id")
+        result = await ts_query(TsQueryArgs(filepath=str(f), query="(identifier) @id"))
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_extract_unsupported_ext(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
         f = self.tmp_path / "data.csv"
         f.write_text("a,b,c")
-        result = await ts_extract(str(f), "function_definition", "foo")
+        result = await ts_extract(
+            TsExtractArgs(filepath=str(f), node_type="function_definition", name="foo")
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_scope_unsupported_ext(self):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
 
         f = self.tmp_path / "data.csv"
         f.write_text("a,b,c")
-        result = await ts_scope_at_position(str(f), 1, 0)
+        result = await ts_scope_at_position(TsScopeArgs(filepath=str(f), line=1, char=0))
         assert "Error" in result
 
     @pytest.mark.asyncio
-    async def test_ts_outline_get_outline_raises(self):
-        from unittest.mock import patch as _patch
-
+    async def test_ts_outline_get_outline_raises(self, mocker):
+        from mcp_servers.lsp.models.schemas import TsOutlineArgs
         from mcp_servers.lsp.tools.treesitter import ts_outline
         from mcp_servers.lsp.treesitter import _OUTLINE_QUERIES
 
-        with _patch.dict(_OUTLINE_QUERIES, clear=True):
-            result = await ts_outline(str(self.python_file))
+        mocker.patch.dict(_OUTLINE_QUERIES, clear=True)
+        result = await ts_outline(TsOutlineArgs(filepath=str(self.python_file)))
         assert "Error" in result
 
     @pytest.mark.asyncio
-    async def test_ts_scope_get_scope_raises(self):
-        from unittest.mock import patch as _patch
-
+    async def test_ts_scope_get_scope_raises(self, mocker):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
         from mcp_servers.lsp.treesitter import _SCOPE_NODE_TYPES
 
-        with _patch.dict(_SCOPE_NODE_TYPES, clear=True):
-            result = await ts_scope_at_position(str(self.python_file), 1, 0)
+        mocker.patch.dict(_SCOPE_NODE_TYPES, clear=True)
+        result = await ts_scope_at_position(
+            TsScopeArgs(filepath=str(self.python_file), line=1, char=0)
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_outline_empty_file(self):
+        from mcp_servers.lsp.models.schemas import TsOutlineArgs
         from mcp_servers.lsp.tools.treesitter import ts_outline
 
         f = self.tmp_path / "empty.py"
         f.write_text("")
-        result = await ts_outline(str(f))
+        result = await ts_outline(TsOutlineArgs(filepath=str(f)))
         assert result == "No symbols found."
 
     @pytest.mark.asyncio
     async def test_ts_query_long_text_truncation(self):
+        from mcp_servers.lsp.models.schemas import TsQueryArgs
         from mcp_servers.lsp.tools.treesitter import ts_query
 
         f = self.tmp_path / "long.py"
         f.write_text(f"x = '{'a' * 200}'\n")
-        result = await ts_query(str(f), "(string (string_content) @s)")
+        result = await ts_query(TsQueryArgs(filepath=str(f), query="(string (string_content) @s)"))
         assert "..." in result
 
     @pytest.mark.asyncio
-    async def test_ts_scope_no_scope_found(self):
-        from unittest.mock import patch as _patch
-
+    async def test_ts_scope_no_scope_found(self, mocker):
+        from mcp_servers.lsp.models.schemas import TsScopeArgs
         from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
         from mcp_servers.lsp.treesitter import _SCOPE_NODE_TYPES
 
         empty_types: dict[str, set[str]] = {"python": set()}
-        with _patch.dict(_SCOPE_NODE_TYPES, empty_types, clear=True):
-            result = await ts_scope_at_position(str(self.python_file), 1, 0)
+        mocker.patch.dict(_SCOPE_NODE_TYPES, empty_types, clear=True)
+        result = await ts_scope_at_position(
+            TsScopeArgs(filepath=str(self.python_file), line=1, char=0)
+        )
         assert result == "No enclosing scope found."
 
     @pytest.mark.asyncio
     async def test_ts_extract_bad_file(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
-        result = await ts_extract(str(self.tmp_path / "nope.py"), "function_definition", "foo")
+        result = await ts_extract(
+            TsExtractArgs(
+                filepath=str(self.tmp_path / "nope.py"), node_type="function_definition", name="foo"
+            )
+        )
         assert "Error" in result
 
     @pytest.mark.asyncio
     async def test_ts_extract_invalid_node_type(self):
+        from mcp_servers.lsp.models.schemas import TsExtractArgs
         from mcp_servers.lsp.tools.treesitter import ts_extract
 
-        result = await ts_extract(str(self.python_file), "nonexistent_node_xyz", "foo")
+        result = await ts_extract(
+            TsExtractArgs(
+                filepath=str(self.python_file), node_type="nonexistent_node_xyz", name="foo"
+            )
+        )
         assert "Error" in result
         assert "Invalid node type" in result

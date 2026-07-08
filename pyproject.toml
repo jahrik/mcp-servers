@@ -69,6 +69,7 @@ required-imports = ["from __future__ import annotations"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 markers = [
     "integration: end-to-end tests that drive a real language server (pyright); skipped when it is not installed",
 ]

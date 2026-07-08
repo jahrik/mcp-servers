@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -9,19 +8,19 @@ from mcp_servers.lsp.session import LSPError, LSPSession
 
 
 @pytest.fixture
-def mock_process():
-    process = MagicMock(spec=asyncio.subprocess.Process)
+def mock_process(mocker):
+    process = mocker.MagicMock(spec=asyncio.subprocess.Process)
 
-    process.stdin = MagicMock()
-    process.stdin.write = MagicMock()
-    process.stdin.drain = AsyncMock()
+    process.stdin = mocker.MagicMock()
+    process.stdin.write = mocker.MagicMock()
+    process.stdin.drain = mocker.AsyncMock()
 
-    process.stdout = AsyncMock()
-    process.stderr = AsyncMock()
+    process.stdout = mocker.AsyncMock()
+    process.stderr = mocker.AsyncMock()
 
-    process.terminate = MagicMock()
-    process.kill = MagicMock()
-    process.wait = AsyncMock()
+    process.terminate = mocker.MagicMock()
+    process.kill = mocker.MagicMock()
+    process.wait = mocker.AsyncMock()
 
     return process
 
@@ -40,110 +39,110 @@ def test_lsp_error():
 
 
 @pytest.mark.asyncio
-async def test_start(client, mock_process):
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
-        mock_exec.return_value = mock_process
-        await client.start()
+async def test_start(client, mock_process, mocker):
+    mock_exec = mocker.patch("asyncio.create_subprocess_exec", new_callable=mocker.AsyncMock)
+    mock_exec.return_value = mock_process
+    await client.start()
 
-        mock_exec.assert_called_once_with(
-            "dummy",
-            "cmd",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+    mock_exec.assert_called_once_with(
+        "dummy",
+        "cmd",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
 
-        assert client._process == mock_process
-        assert client._read_task is not None
-        assert client._stderr_task is not None
+    assert client._process == mock_process
+    assert client._read_task is not None
+    assert client._stderr_task is not None
 
-        # calling start again should return immediately
-        await client.start()
-        mock_exec.assert_called_once()
+    # calling start again should return immediately
+    await client.start()
+    mock_exec.assert_called_once()
 
-        # Cleanup
-        client.send_request = AsyncMock()
-        client.send_notification = AsyncMock()
-        await client.stop()
+    # Cleanup
+    client.send_request = mocker.AsyncMock()
+    client.send_notification = mocker.AsyncMock()
+    await client.stop()
 
 
 @pytest.mark.asyncio
-async def test_stop(client, mock_process):
+async def test_stop(client, mock_process, mocker):
     await client.stop()  # Calling stop when not started does nothing
 
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
-        mock_exec.return_value = mock_process
-        await client.start()
+    mock_exec = mocker.patch("asyncio.create_subprocess_exec", new_callable=mocker.AsyncMock)
+    mock_exec.return_value = mock_process
+    await client.start()
 
-        # Mock successful send_notification
-        client.send_request = AsyncMock()
-        client.send_notification = AsyncMock()
+    # Mock successful send_notification
+    client.send_request = mocker.AsyncMock()
+    client.send_notification = mocker.AsyncMock()
 
-        await client.stop()
+    await client.stop()
 
-        client.send_request.assert_called_once_with("shutdown", None, timeout=5.0)
-        client.send_notification.assert_called_once_with("exit", None)
-        mock_process.terminate.assert_called_once()
-        mock_process.wait.assert_awaited_once()
-        assert client._process is None
-
-
-@pytest.mark.asyncio
-async def test_stop_exception(client, mock_process):
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
-        mock_exec.return_value = mock_process
-        await client.start()
-
-        client.send_request = AsyncMock(side_effect=Exception("mock err"))
-        client.send_notification = AsyncMock()
-
-        await client.stop()
-
-        client.send_request.assert_called_once()
-        client.send_notification.assert_not_called()
-        mock_process.terminate.assert_called_once()
+    client.send_request.assert_called_once_with("shutdown", None, timeout=5.0)
+    client.send_notification.assert_called_once_with("exit", None)
+    mock_process.terminate.assert_called_once()
+    mock_process.wait.assert_awaited_once()
+    assert client._process is None
 
 
 @pytest.mark.asyncio
-async def test_stop_timeout(client, mock_process):
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
-        mock_exec.return_value = mock_process
-        await client.start()
+async def test_stop_exception(client, mock_process, mocker):
+    mock_exec = mocker.patch("asyncio.create_subprocess_exec", new_callable=mocker.AsyncMock)
+    mock_exec.return_value = mock_process
+    await client.start()
 
-        # Make wait time out
-        mock_process.wait.side_effect = [TimeoutError, None]
-        client.send_request = AsyncMock()
-        client.send_notification = AsyncMock()
+    client.send_request = mocker.AsyncMock(side_effect=Exception("mock err"))
+    client.send_notification = mocker.AsyncMock()
 
-        await client.stop()
+    await client.stop()
 
-        mock_process.terminate.assert_called_once()
-        mock_process.kill.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_send(client, mock_process):
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
-        mock_exec.return_value = mock_process
-        await client.start()
-
-        await client._send({"test": "data"})
-
-        payload_bytes = b'{"test":"data"}'
-        headers = f"Content-Length: {len(payload_bytes)}\r\n\r\n".encode("ascii")
-
-        mock_process.stdin.write.assert_called_once_with(headers + payload_bytes)
-        mock_process.stdin.drain.assert_awaited_once()
-
-        # Reset process to None to test error
-        client._process = None
-        with pytest.raises(RuntimeError, match="LSP process is not running"):
-            await client._send({})
+    client.send_request.assert_called_once()
+    client.send_notification.assert_not_called()
+    mock_process.terminate.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_send_notification(client, mock_process):
-    client._send = AsyncMock()
+async def test_stop_timeout(client, mock_process, mocker):
+    mock_exec = mocker.patch("asyncio.create_subprocess_exec", new_callable=mocker.AsyncMock)
+    mock_exec.return_value = mock_process
+    await client.start()
+
+    # Make wait time out
+    mock_process.wait.side_effect = [TimeoutError, None]
+    client.send_request = mocker.AsyncMock()
+    client.send_notification = mocker.AsyncMock()
+
+    await client.stop()
+
+    mock_process.terminate.assert_called_once()
+    mock_process.kill.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send(client, mock_process, mocker):
+    mock_exec = mocker.patch("asyncio.create_subprocess_exec", new_callable=mocker.AsyncMock)
+    mock_exec.return_value = mock_process
+    await client.start()
+
+    await client._send({"test": "data"})
+
+    payload_bytes = b'{"test":"data"}'
+    headers = f"Content-Length: {len(payload_bytes)}\r\n\r\n".encode("ascii")
+
+    mock_process.stdin.write.assert_called_once_with(headers + payload_bytes)
+    mock_process.stdin.drain.assert_awaited_once()
+
+    # Reset process to None to test error
+    client._process = None
+    with pytest.raises(RuntimeError, match="LSP process is not running"):
+        await client._send({})
+
+
+@pytest.mark.asyncio
+async def test_send_notification(client, mock_process, mocker):
+    client._send = mocker.AsyncMock()
     await client.send_notification("test/method", {"foo": "bar"})
     client._send.assert_called_once_with(
         {"jsonrpc": "2.0", "method": "test/method", "params": {"foo": "bar"}}
@@ -156,8 +155,8 @@ async def test_send_notification(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_send_request(client, mock_process):
-    client._send = AsyncMock()
+async def test_send_request(client, mock_process, mocker):
+    client._send = mocker.AsyncMock()
 
     # We need to simulate a response to fulfill the future
     async def mock_send(payload):
@@ -175,8 +174,8 @@ async def test_send_request(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_send_request_timeout(client):
-    client._send = AsyncMock()
+async def test_send_request_timeout(client, mocker):
+    client._send = mocker.AsyncMock()
 
     # Never fulfill future
     with pytest.raises(TimeoutError, match="LSP Request test timed out after 0.01s"):
@@ -184,8 +183,8 @@ async def test_send_request_timeout(client):
 
 
 @pytest.mark.asyncio
-async def test_send_request_no_timeout(client):
-    client._send = AsyncMock()
+async def test_send_request_no_timeout(client, mocker):
+    client._send = mocker.AsyncMock()
 
     async def mock_send(payload):
         client._pending_requests[payload["id"]].set_result("success")
@@ -197,9 +196,9 @@ async def test_send_request_no_timeout(client):
 
 
 @pytest.mark.asyncio
-async def test_initialize(client):
-    client.send_request = AsyncMock(return_value={"capabilities": {}})
-    client.send_notification = AsyncMock()
+async def test_initialize(client, mocker):
+    client.send_request = mocker.AsyncMock(return_value={"capabilities": {}})
+    client.send_notification = mocker.AsyncMock()
 
     res = await client.initialize("file:///tmp")
     assert res == {"capabilities": {}}
@@ -208,8 +207,8 @@ async def test_initialize(client):
 
 
 @pytest.mark.asyncio
-async def test_sync_file(client):
-    client.send_notification = AsyncMock()
+async def test_sync_file(client, mocker):
+    client.send_notification = mocker.AsyncMock()
     await client.sync_file("file:///tmp/test.py", "python", "print('hello')")
     client.send_notification.assert_called_once()
     assert "didOpen" in client.send_notification.call_args[0][0]
@@ -240,9 +239,9 @@ async def test_handle_payload_response():
 
 
 @pytest.mark.asyncio
-async def test_handle_payload_server_request():
+async def test_handle_payload_server_request(mocker):
     client = LSPSession(["dummy"])
-    client._send = AsyncMock()
+    client._send = mocker.AsyncMock()
 
     # Method without ID
     client._handle_payload({"method": "window/logMessage", "params": {}})
@@ -297,7 +296,7 @@ async def test_stderr_loop_cancellation(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_read_loop(client, mock_process):
+async def test_read_loop(client, mock_process, mocker):
     body = b'{"id": 1, "result": "ok"}'
 
     mock_process.stdout.readline.side_effect = [
@@ -308,7 +307,7 @@ async def test_read_loop(client, mock_process):
     mock_process.stdout.readexactly.return_value = body
 
     client._process = mock_process
-    client._handle_payload = MagicMock()
+    client._handle_payload = mocker.MagicMock()
 
     await client._read_loop()
 
@@ -316,7 +315,7 @@ async def test_read_loop(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_read_loop_empty_content(client, mock_process):
+async def test_read_loop_empty_content(client, mock_process, mocker):
     mock_process.stdout.readline.side_effect = [
         b"Content-Length: 0\r\n",
         b"\r\n",
@@ -324,14 +323,14 @@ async def test_read_loop_empty_content(client, mock_process):
     ]
 
     client._process = mock_process
-    client._handle_payload = MagicMock()
+    client._handle_payload = mocker.MagicMock()
 
     await client._read_loop()
     client._handle_payload.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_read_loop_invalid_content_length(client, mock_process):
+async def test_read_loop_invalid_content_length(client, mock_process, mocker):
     mock_process.stdout.readline.side_effect = [
         b"Content-Length: bad\r\n",
         b"\r\n",
@@ -339,14 +338,14 @@ async def test_read_loop_invalid_content_length(client, mock_process):
     ]
 
     client._process = mock_process
-    client._handle_payload = MagicMock()
+    client._handle_payload = mocker.MagicMock()
 
     await client._read_loop()
     client._handle_payload.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_read_loop_bad_json(client, mock_process):
+async def test_read_loop_bad_json(client, mock_process, mocker):
     body = b"not json"
 
     mock_process.stdout.readline.side_effect = [
@@ -357,7 +356,7 @@ async def test_read_loop_bad_json(client, mock_process):
     mock_process.stdout.readexactly.return_value = body
 
     client._process = mock_process
-    client._handle_payload = MagicMock()
+    client._handle_payload = mocker.MagicMock()
 
     await client._read_loop()
 
@@ -365,7 +364,7 @@ async def test_read_loop_bad_json(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_read_loop_handle_payload_exception(client, mock_process):
+async def test_read_loop_handle_payload_exception(client, mock_process, mocker):
     body = b'{"id": 1}'
 
     mock_process.stdout.readline.side_effect = [
@@ -376,7 +375,7 @@ async def test_read_loop_handle_payload_exception(client, mock_process):
     mock_process.stdout.readexactly.return_value = body
 
     client._process = mock_process
-    client._handle_payload = MagicMock(side_effect=Exception("mock err"))
+    client._handle_payload = mocker.MagicMock(side_effect=Exception("mock err"))
 
     await client._read_loop()
     # Should log and continue, ending on EOF
@@ -407,18 +406,18 @@ async def test_read_loop_cancellation_and_cleanup(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_read_loop_unhandled_method_send_error(client, mock_process):
+async def test_read_loop_unhandled_method_send_error(client, mock_process, mocker):
     body = b'{"jsonrpc": "2.0", "id": 999, "method": "unknown/method"}'
     mock_process.stdout.readline.side_effect = [
         b"Content-Length: " + str(len(body)).encode("utf-8") + b"\r\n",
         b"\r\n",
         b"",  # EOF
     ]
-    mock_process.stdout.readexactly = AsyncMock(return_value=body)
+    mock_process.stdout.readexactly = mocker.AsyncMock(return_value=body)
     client._process = mock_process
 
     # Mock _send to raise an exception
-    client._send = AsyncMock(side_effect=Exception("mock send error"))
+    client._send = mocker.AsyncMock(side_effect=Exception("mock send error"))
 
     await client._read_loop()
 
@@ -430,10 +429,10 @@ async def test_read_loop_unhandled_method_send_error(client, mock_process):
 
 
 @pytest.mark.asyncio
-async def test_session_incremental_sync():
+async def test_session_incremental_sync(mocker):
     session = LSPSession(["dummy"])
     session._sync_kind = 2
-    session.send_notification = AsyncMock()
+    session.send_notification = mocker.AsyncMock()
 
     # initial sync
     await session.sync_file("file:///test.py", "python", "a\nb\n")
@@ -480,25 +479,25 @@ async def test_session_incremental_sync():
 
 
 @pytest.mark.asyncio
-async def test_session_initialize_sync_kind():
+async def test_session_initialize_sync_kind(mocker):
     session = LSPSession(["dummy"])
-    session.send_request = AsyncMock(
+    session.send_request = mocker.AsyncMock(
         return_value={"capabilities": {"textDocumentSync": {"change": 2}}}
     )
-    session.send_notification = AsyncMock()
+    session.send_notification = mocker.AsyncMock()
 
     await session.initialize("file:///test")
     assert session._sync_kind == 2
 
-    session.send_request = AsyncMock(return_value={"capabilities": {"textDocumentSync": 1}})
+    session.send_request = mocker.AsyncMock(return_value={"capabilities": {"textDocumentSync": 1}})
     await session.initialize("file:///test")
     assert session._sync_kind == 1
 
 
 @pytest.mark.asyncio
-async def test_sync_file_incremental_diff_branches():
+async def test_sync_file_incremental_diff_branches(mocker):
     session = LSPSession(["dummy"])
-    session.send_notification = AsyncMock()
+    session.send_notification = mocker.AsyncMock()
     session._sync_kind = 2  # Incremental
 
     # 1. No change
@@ -527,10 +526,10 @@ async def test_sync_file_incremental_diff_branches():
 
 
 @pytest.mark.asyncio
-async def test_lsp_session_settings_loading_and_configuration(tmp_path):
+async def test_lsp_session_settings_loading_and_configuration(tmp_path, mocker):
     session = LSPSession(["dummy"])
-    session.send_request = AsyncMock(return_value={"capabilities": {}})
-    session.send_notification = AsyncMock()
+    session.send_request = mocker.AsyncMock(return_value={"capabilities": {}})
+    session.send_notification = mocker.AsyncMock()
 
     # 1. Setup mock venv, pyproject.toml, and .vscode/settings.json
     venv_dir = tmp_path / ".venv"
@@ -568,7 +567,7 @@ async def test_lsp_session_settings_loading_and_configuration(tmp_path):
     assert session._get_configuration_for_section("python.pythonPath") == str(python_path)
 
     # Nested and flat key reconstruction
-    # Section "python" should return a dict containing analysis and pythonPath
+    # Flat key key values returned by section lookup
     python_config = session._get_configuration_for_section("python")
     assert isinstance(python_config, dict)
     assert python_config["pythonPath"] == str(python_path)
@@ -577,9 +576,9 @@ async def test_lsp_session_settings_loading_and_configuration(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_lsp_session_handle_payload_workspace_configuration():
+async def test_lsp_session_handle_payload_workspace_configuration(mocker):
     session = LSPSession(["dummy"])
-    session._send = AsyncMock()
+    session._send = mocker.AsyncMock()
     session._settings = {"python": {"venvPath": "/path/to/venv"}}
 
     # We call _handle_payload with workspace/configuration
@@ -630,10 +629,10 @@ def test_get_configuration_for_section_missed_branches():
 
 
 @pytest.mark.asyncio
-async def test_lsp_session_settings_loading_exceptions(tmp_path):
+async def test_lsp_session_settings_loading_exceptions(tmp_path, mocker):
     session = LSPSession(["dummy"])
-    session.send_request = AsyncMock(return_value={"capabilities": {}})
-    session.send_notification = AsyncMock()
+    session.send_request = mocker.AsyncMock(return_value={"capabilities": {}})
+    session.send_notification = mocker.AsyncMock()
 
     # 1. Invalid pyproject.toml syntax (triggers line 352-353 exception)
     pyproject = tmp_path / "pyproject.toml"
@@ -651,18 +650,17 @@ async def test_lsp_session_settings_loading_exceptions(tmp_path):
     assert session._settings == {"python.analysis.indexing": True}
 
     # 3. Overall exception handling (triggers line 370-371 exception)
-    with patch("urllib.parse.unquote", side_effect=ValueError("unquote error")):
-        await session.initialize("file:///invalid/path")
-        # Should catch exception and not crash
-        assert session._settings == {"python.analysis.indexing": True}
+    mocker.patch("urllib.parse.unquote", side_effect=ValueError("unquote error"))
+    await session.initialize("file:///invalid/path")
+    # Should catch exception and not crash
+    assert session._settings == {"python.analysis.indexing": True}
 
 
-def test_session_is_alive():
+def test_session_is_alive(mocker):
     session = LSPSession(["dummy"])
     assert session.is_alive() is False
-    from unittest.mock import MagicMock
 
-    session._process = MagicMock()
+    session._process = mocker.MagicMock()
     session._process.returncode = None
     assert session.is_alive() is True
     session._process.returncode = 0
@@ -670,9 +668,9 @@ def test_session_is_alive():
 
 
 @pytest.mark.asyncio
-async def test_workspace_configuration_send_failure():
+async def test_workspace_configuration_send_failure(mocker):
     session = LSPSession(["dummy"])
-    session._send = AsyncMock(side_effect=RuntimeError("stdin closed"))
+    session._send = mocker.AsyncMock(side_effect=RuntimeError("stdin closed"))
 
     session._handle_payload(
         {

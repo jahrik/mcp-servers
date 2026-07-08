@@ -1,153 +1,152 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from mcp_servers.lsp import utils
 
 
-def _patch_root(root: Path):
-    return patch("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(root))
-
-
-def test_candidate_roots_includes_git_children(tmp_path):
+def test_candidate_roots_includes_git_children(tmp_path, monkeypatch):
     repo = tmp_path / "repo-a"
     repo.mkdir()
     (repo / ".git").mkdir()
     plain = tmp_path / "not-a-repo"
     plain.mkdir()
 
-    with _patch_root(tmp_path):
-        roots = utils._candidate_roots()
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    roots = utils._candidate_roots()
 
     assert roots[0] == tmp_path.resolve()
     assert repo.resolve() in roots
     assert plain.resolve() not in roots
 
 
-def test_candidate_roots_iterdir_oserror(tmp_path):
-    with _patch_root(tmp_path), patch.object(Path, "iterdir", side_effect=OSError):
-        roots = utils._candidate_roots()
+def test_candidate_roots_iterdir_oserror(tmp_path, monkeypatch, mocker):
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    mocker.patch.object(Path, "iterdir", side_effect=OSError)
+    roots = utils._candidate_roots()
 
     assert roots == [tmp_path.resolve()]
 
 
-def test_candidate_roots_child_oserror_skipped(tmp_path):
+def test_candidate_roots_child_oserror_skipped(tmp_path, monkeypatch, mocker):
     (tmp_path / "repo-a").mkdir()
 
-    with _patch_root(tmp_path), patch.object(Path, "is_dir", side_effect=OSError):
-        roots = utils._candidate_roots()
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    mocker.patch.object(Path, "is_dir", side_effect=OSError)
+    roots = utils._candidate_roots()
 
     # The unreadable child is skipped; only the workspace root remains.
     assert roots == [tmp_path.resolve()]
 
 
-def test_prepare_file_absolute_ok(tmp_path):
+def test_prepare_file_absolute_ok(tmp_path, monkeypatch):
     target = tmp_path / "file.py"
     target.write_text("x = 1\n")
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file(str(target))
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file(str(target))
 
     assert result == target.resolve()
 
 
-def test_prepare_file_absolute_outside_root(tmp_path):
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("/etc/hosts")
+def test_prepare_file_absolute_outside_root(tmp_path, monkeypatch):
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("/etc/hosts")
 
     assert isinstance(result, str)
     assert "must be within the workspace root" in result
 
 
-def test_prepare_file_absolute_not_found(tmp_path):
-    with _patch_root(tmp_path):
-        result = utils._prepare_file(str(tmp_path / "missing.py"))
+def test_prepare_file_absolute_not_found(tmp_path, monkeypatch):
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file(str(tmp_path / "missing.py"))
 
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_safe_exists_swallows_oserror(tmp_path):
+def test_safe_exists_swallows_oserror(tmp_path, mocker):
     target = tmp_path / "f.py"
     target.write_text("x = 1\n")
-    with patch.object(Path, "exists", side_effect=PermissionError):
-        assert utils._safe_exists(target) is False
+    mocker.patch.object(Path, "exists", side_effect=PermissionError)
+    assert utils._safe_exists(target) is False
 
 
-def test_safe_is_file_swallows_oserror(tmp_path):
+def test_safe_is_file_swallows_oserror(tmp_path, mocker):
     target = tmp_path / "f.py"
     target.write_text("x = 1\n")
-    with patch.object(Path, "is_file", side_effect=PermissionError):
-        assert utils._safe_is_file(target) is False
+    mocker.patch.object(Path, "is_file", side_effect=PermissionError)
+    assert utils._safe_is_file(target) is False
 
 
-def test_prepare_file_absolute_exists_oserror(tmp_path):
+def test_prepare_file_absolute_exists_oserror(tmp_path, monkeypatch, mocker):
     # An unreadable absolute path resolves to "File not found" instead of
     # raising and bypassing the tool-level error handling.
     target = tmp_path / "f.py"
     target.write_text("x = 1\n")
-    with _patch_root(tmp_path), patch.object(Path, "exists", side_effect=PermissionError):
-        result = utils._prepare_file(str(target))
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    mocker.patch.object(Path, "exists", side_effect=PermissionError)
+    result = utils._prepare_file(str(target))
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_prepare_file_relative_is_file_oserror(tmp_path):
+def test_prepare_file_relative_is_file_oserror(tmp_path, monkeypatch, mocker):
     # An unreadable relative candidate is treated as a non-match, not a crash.
     target = tmp_path / "f.py"
     target.write_text("x = 1\n")
-    with _patch_root(tmp_path), patch.object(Path, "is_file", side_effect=PermissionError):
-        result = utils._prepare_file("f.py")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    mocker.patch.object(Path, "is_file", side_effect=PermissionError)
+    result = utils._prepare_file("f.py")
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_prepare_file_absolute_directory(tmp_path):
+def test_prepare_file_absolute_directory(tmp_path, monkeypatch):
     sub = tmp_path / "adir"
     sub.mkdir()
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file(str(sub))
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file(str(sub))
 
     assert isinstance(result, str)
     assert result.startswith("Error: Not a regular file")
 
 
-def test_prepare_file_relative_directory_not_matched(tmp_path):
+def test_prepare_file_relative_directory_not_matched(tmp_path, monkeypatch):
     # A relative path that resolves to a directory is not a valid match and
     # falls through to the not-found message rather than being returned.
     (tmp_path / "adir").mkdir()
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("adir")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("adir")
 
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_prepare_file_relative_in_child_repo(tmp_path):
+def test_prepare_file_relative_in_child_repo(tmp_path, monkeypatch):
     repo = tmp_path / "repo-a"
     (repo / "src").mkdir(parents=True)
     (repo / ".git").mkdir()
     target = repo / "src" / "mod.py"
     target.write_text("y = 2\n")
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("src/mod.py")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("src/mod.py")
 
     assert result == target.resolve()
 
 
-def test_prepare_file_relative_ambiguous(tmp_path):
+def test_prepare_file_relative_ambiguous(tmp_path, monkeypatch):
     for name in ("repo-a", "repo-b"):
         repo = tmp_path / name
         (repo / "src").mkdir(parents=True)
         (repo / ".git").mkdir()
         (repo / "src" / "mod.py").write_text("z = 3\n")
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("src/mod.py")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("src/mod.py")
 
     assert isinstance(result, str)
     assert "Ambiguous filepath" in result
@@ -155,30 +154,30 @@ def test_prepare_file_relative_ambiguous(tmp_path):
     assert "repo-b" in result
 
 
-def test_prepare_file_relative_escapes_root(tmp_path):
+def test_prepare_file_relative_escapes_root(tmp_path, monkeypatch):
     # A ".." traversal resolves outside the workspace root and is rejected by
     # the containment guard rather than being treated as a match.
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("../outside.py")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("../outside.py")
 
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_prepare_file_relative_not_found(tmp_path):
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("nope/missing.py")
+def test_prepare_file_relative_not_found(tmp_path, monkeypatch):
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("nope/missing.py")
 
     assert isinstance(result, str)
     assert result.startswith("Error: File not found")
 
 
-def test_prepare_file_relative_in_workspace_root(tmp_path):
+def test_prepare_file_relative_in_workspace_root(tmp_path, monkeypatch):
     target = tmp_path / "top.py"
     target.write_text("w = 4\n")
 
-    with _patch_root(tmp_path):
-        result = utils._prepare_file("top.py")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    result = utils._prepare_file("top.py")
 
     assert result == target.resolve()
 
@@ -294,7 +293,7 @@ def test_filter_symbols():
     assert "children" not in res_top[0]
 
 
-def test_cap_and_spill():
+def test_cap_and_spill(mocker):
     # Under limit
     lines = ["a", "b"]
     res = utils._cap_and_spill(
@@ -331,6 +330,6 @@ def test_cap_and_spill():
     assert "... 7 more" in res_hdr
 
     # Spill exception handling (covers lines 285-287)
-    with patch("tempfile.NamedTemporaryFile", side_effect=Exception("spill error")):
-        res_err = utils._cap_and_spill(results, results, formatted, max_n=3)
-        assert "[Error: Failed to write full spill file: spill error]" in res_err
+    mocker.patch("tempfile.NamedTemporaryFile", side_effect=Exception("spill error"))
+    res_err = utils._cap_and_spill(results, results, formatted, max_n=3)
+    assert "[Error: Failed to write full spill file: spill error]" in res_err
