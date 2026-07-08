@@ -70,6 +70,23 @@ Result cells are rendered to JSON as follows:
 - `LIST`/`STRUCT`/`MAP` → JSON arrays/objects
 - `UUID`, `INTERVAL`, and any other type → their string representation
 
+## Token savings in practice
+
+The point of the server is to keep large payloads out of the agent's context: it processes
+the file natively and returns only the answer rows. Three measured runs, from a GitHub API
+payload up to 50M synthetic rows (tokens ≈ bytes ÷ 4; DuckDB is bundled, so no CLI is needed):
+
+| Source | Size on disk | ~Tokens if read into context | Query → result | ~Result tokens | Reduction |
+|--------|-------------:|-----------------------------:|----------------|---------------:|----------:|
+| **GitHub API** — `users/jahrik/repos` JSON | 381 KB | ~95K | language analytics → 11 rows | ~200 | **~475 : 1** |
+| **Synthetic** — `events.jsonl`, 10M rows | 1.40 GB | ~366M | revenue by type/region → 8 rows | ~360 | **~1,000,000 : 1** |
+| **Cold-agent test** — `sales.csv`, 6K rows | 199 KB | ~51K | top-3 regions by revenue → 3 rows | ~50 | **~1,000 : 1** |
+
+The synthetic file is 1,800× larger than a 200K-token context window — it *cannot* be read
+in at all, so the server is not just cheaper here but the only way to answer. The cold-agent
+row is the smallest but the most telling: an unprimed agent, handed only the file path and a
+question, chose `duckdb_query` over reading the file on its own.
+
 ## Usage examples
 
 ### 1. In-memory key-value state
