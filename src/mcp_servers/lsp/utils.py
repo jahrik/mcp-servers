@@ -350,9 +350,9 @@ def _treesitter_workspace_symbols(query: str, limit: int = _FALLBACK_MAX_RESULTS
     Many language servers (e.g. Microsoft ``pyright``) return nothing for
     ``workspace/symbol`` because they do not index the workspace. This walks the
     workspace source tree, outlines each file with tree-sitter, and matches
-    top-level class/function declarations whose name contains ``query`` (case
-    -insensitive), returning LSP ``SymbolInformation``-shaped dicts so the normal
-    formatting/filtering/spill path renders them unchanged.
+    top-level class/function declarations whose name contains ``query``
+    (case-insensitive), returning LSP ``SymbolInformation``-shaped dicts so the
+    normal formatting/filtering/spill path renders them unchanged.
     """
     needle = query.lower().strip()
     if not needle:

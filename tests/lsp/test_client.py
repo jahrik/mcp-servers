@@ -448,7 +448,7 @@ async def test_concurrent_sessions_coverage_gaps(mocker):
     # 1. Test line 539: MCP_LSP_COMMAND env var parsing in client initialization
     mocker.patch.dict("os.environ", {"MCP_LSP_COMMAND": "custom-server --flag"})
     c = LSPClient()
-    assert c.language_commands["python"] == [["custom-server", "--flag"]]
+    assert c.language_commands["python"] == [["custom-server", "--flag"], ["ruff", "server"]]
 
     # 2. Test line 733: send_request raise RuntimeError when no active sessions
     c2 = LSPClient()
