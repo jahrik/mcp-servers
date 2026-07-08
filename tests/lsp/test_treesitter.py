@@ -5,7 +5,7 @@ import pytest
 
 from mcp_servers.lsp.treesitter import (
     detect_language,
-    extract_node,
+    extract_nodes,
     get_outline,
     get_scope_at_position,
     parse_file,
@@ -199,6 +199,25 @@ class TestGetScopeAtPosition:
         scopes = get_scope_at_position(tree, lang, 0, 0)
         assert scopes[0]["type"] == "module"
 
+    def test_module_end_line_not_inflated_by_trailing_newline(self, tmp_path):
+        """The module range must not overshoot when the file ends with a newline."""
+        f = tmp_path / "trailing.py"
+        f.write_text("def a():\n    return 1\ndef b():\n    return 2\n")  # 4 lines + newline
+        tree, lang = parse_file(f)
+        scopes = get_scope_at_position(tree, lang, 2, 0)
+        module = next(s for s in scopes if s["type"] == "module")
+        assert module["start_line"] == 1
+        assert module["end_line"] == 4
+
+    def test_module_end_line_without_trailing_newline(self, tmp_path):
+        """No trailing newline was already correct; keep it correct."""
+        f = tmp_path / "no_trailing.py"
+        f.write_text("def a():\n    return 1\ndef b():\n    return 2")  # 4 lines, no newline
+        tree, lang = parse_file(f)
+        scopes = get_scope_at_position(tree, lang, 2, 0)
+        module = next(s for s in scopes if s["type"] == "module")
+        assert module["end_line"] == 4
+
     def test_standalone_function(self, python_file):
         tree, lang = parse_file(python_file)
         scopes = get_scope_at_position(tree, lang, 5, 4)
@@ -207,12 +226,13 @@ class TestGetScopeAtPosition:
         assert "Greeter" not in names
 
 
-class TestExtractNode:
+class TestExtractNodes:
     def test_extract_function(self, python_file):
         tree, lang = parse_file(python_file)
         source = python_file.read_bytes()
-        result = extract_node(tree, lang, source, "function_definition", "standalone")
-        assert result is not None
+        results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        assert len(results) == 1
+        result = results[0]
         assert "def standalone" in result["text"]
         assert "return -x" in result["text"]
         assert result["start_line"] == 5
@@ -221,16 +241,36 @@ class TestExtractNode:
     def test_extract_class(self, python_file):
         tree, lang = parse_file(python_file)
         source = python_file.read_bytes()
-        result = extract_node(tree, lang, source, "class_definition", "Greeter")
-        assert result is not None
-        assert "class Greeter" in result["text"]
-        assert "def greet" in result["text"]
+        results = extract_nodes(tree, lang, source, "class_definition", "Greeter")
+        assert len(results) == 1
+        assert "class Greeter" in results[0]["text"]
+        assert "def greet" in results[0]["text"]
 
     def test_extract_not_found(self, python_file):
         tree, lang = parse_file(python_file)
         source = python_file.read_bytes()
-        result = extract_node(tree, lang, source, "function_definition", "nonexistent")
-        assert result is None
+        results = extract_nodes(tree, lang, source, "function_definition", "nonexistent")
+        assert results == []
+
+    def test_extract_returns_all_ambiguous_matches(self, tmp_path):
+        """A name shared by several nodes yields every match, not just the first."""
+        f = tmp_path / "dup.py"
+        f.write_text(
+            "class A:\n"
+            "    def __init__(self):\n"
+            "        self.a = 1\n"
+            "\n"
+            "class B:\n"
+            "    def __init__(self):\n"
+            "        self.b = 2\n"
+        )
+        tree, lang = parse_file(f)
+        source = f.read_bytes()
+        results = extract_nodes(tree, lang, source, "function_definition", "__init__")
+        assert len(results) == 2
+        assert [r["start_line"] for r in results] == [2, 6]
+        assert "self.a = 1" in results[0]["text"]
+        assert "self.b = 2" in results[1]["text"]
 
 
 RUST_SOURCE = """\
@@ -347,9 +387,9 @@ class TestAdditionalLanguages:
         f.write_text(RUST_SOURCE)
         tree, lang = parse_file(f)
         source = f.read_bytes()
-        result = extract_node(tree, lang, source, "function_item", "distance")
-        assert result is not None
-        assert "fn distance" in result["text"]
+        results = extract_nodes(tree, lang, source, "function_item", "distance")
+        assert len(results) == 1
+        assert "fn distance" in results[0]["text"]
 
     def test_extract_invalid_node_type_query_fails(self, tmp_path):
         from mcp_servers.lsp.treesitter import InvalidNodeTypeError
@@ -359,7 +399,7 @@ class TestAdditionalLanguages:
         tree, lang = parse_file(f)
         source = f.read_bytes()
         with pytest.raises(InvalidNodeTypeError, match="Invalid node type"):
-            extract_node(tree, lang, source, "nonexistent_node_type_xyz", "foo")
+            extract_nodes(tree, lang, source, "nonexistent_node_type_xyz", "foo")
 
     def test_extract_invalid_node_type_regex(self, tmp_path):
         from mcp_servers.lsp.treesitter import InvalidNodeTypeError
@@ -369,7 +409,7 @@ class TestAdditionalLanguages:
         tree, lang = parse_file(f)
         source = f.read_bytes()
         with pytest.raises(InvalidNodeTypeError, match="must be lowercase"):
-            extract_node(tree, lang, source, "Bad-Node(Type)", "foo")
+            extract_nodes(tree, lang, source, "Bad-Node(Type)", "foo")
 
 
 class TestEdgeCases:
@@ -432,11 +472,11 @@ class TestEdgeCases:
     def test_extract_node_no_captures(self, python_file):
         tree, lang = parse_file(python_file)
         source = python_file.read_bytes()
-        result = extract_node(tree, lang, source, "function_definition", "nonexistent_xyz")
-        assert result is None
+        results = extract_nodes(tree, lang, source, "function_definition", "nonexistent_xyz")
+        assert results == []
 
     def test_extract_node_query_returns_partial_captures(self, python_file):
-        """Covers the `not name_nodes or not def_nodes` guard in extract_node."""
+        """Covers the `not name_nodes or not def_nodes` guard in extract_nodes."""
         import tree_sitter as ts
 
         tree, lang = parse_file(python_file)
@@ -449,9 +489,27 @@ class TestEdgeCases:
             return [(0, {"name": [], "def": []})] + orig_matches(self, node)
 
         with patch.object(ts.QueryCursor, "matches", patched_matches):
-            result = extract_node(tree, lang, source, "function_definition", "standalone")
-        assert result is not None
-        assert "def standalone" in result["text"]
+            results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        assert len(results) == 1
+        assert "def standalone" in results[0]["text"]
+
+    def test_extract_deduplicates_same_def_node(self, python_file):
+        """Covers the `def_node.id in seen_ids` guard in extract_nodes."""
+        import tree_sitter as ts
+
+        tree, lang = parse_file(python_file)
+        source = python_file.read_bytes()
+        orig_matches = ts.QueryCursor.matches
+
+        def patched_matches(self, node):
+            # Emit every match twice so the same def node is seen more than once.
+            results = orig_matches(self, node)
+            return results + results
+
+        with patch.object(ts.QueryCursor, "matches", patched_matches):
+            results = extract_nodes(tree, lang, source, "function_definition", "standalone")
+        assert len(results) == 1
+        assert "def standalone" in results[0]["text"]
 
 
 class TestToolFunctions:
@@ -531,6 +589,34 @@ class TestToolFunctions:
 
         result = await ts_extract(str(self.python_file), "function_definition", "nope")
         assert "No function_definition named 'nope' found" in result
+
+    @pytest.mark.asyncio
+    async def test_ts_extract_ambiguous_shows_all(self):
+        from mcp_servers.lsp.tools.treesitter import ts_extract
+
+        f = self.tmp_path / "dup.py"
+        f.write_text(
+            "class A:\n"
+            "    def __init__(self):\n"
+            "        self.a = 1\n"
+            "\n"
+            "class B:\n"
+            "    def __init__(self):\n"
+            "        self.b = 2\n"
+        )
+        result = await ts_extract(str(f), "function_definition", "__init__")
+        assert "2 function_definition nodes named '__init__' found" in result
+        assert "self.a = 1" in result
+        assert "self.b = 2" in result
+
+    @pytest.mark.asyncio
+    async def test_ts_scope_module_end_line(self):
+        from mcp_servers.lsp.tools.treesitter import ts_scope_at_position
+
+        f = self.tmp_path / "trailing.py"
+        f.write_text("def a():\n    return 1\ndef b():\n    return 2\n")
+        result = await ts_scope_at_position(str(f), 3, 0)
+        assert "module  (lines 1-4)" in result
 
     @pytest.mark.asyncio
     async def test_ts_scope_tool(self):

@@ -6,6 +6,8 @@ tools. Agents get IDE-grade answers about what a symbol *means* and connects to 
 imports, types, and scope — without managing JSON-RPC lifecycles, subprocesses, or document
 syncing themselves.
 
+Installed as `mcp-lsp`; registered as `lsp`.
+
 The guiding split for agents: `rg` for text, `ts_*` for syntax structure (tree-sitter), and
 `lsp_*` for what a symbol *means*. Prefer `lsp_*` over grep whenever the question is semantic
 (definition, references, type, implementation, call flow, rename). Use `ts_*` for instant
@@ -91,6 +93,8 @@ Each takes `filepath`, `line` (1-indexed), and `char` (0-indexed).
   `line`, `character`.
 - `lsp_execute_code_action` — apply an action returned by `lsp_code_actions`, including any
   follow-up `workspace/executeCommand` edit. Inputs: `index`.
+- `lsp_format` — format a file using the active language server's formatting capability, writing
+  the result to disk. Inputs: `filepath`.
 
 ### Tree-sitter (instant, offline structural analysis)
 

@@ -1,6 +1,10 @@
 # github
 
-An async Python GitHub server using `httpx` for REST and GraphQL calls. It authenticates via a **GitHub App** using dynamically generated Installation Access Tokens, attributing agent actions to a dedicated bot identity (`app-name[bot]`).
+GitHub access over REST and GraphQL (via `httpx`), authenticated as a **GitHub App** using
+dynamically generated Installation Access Tokens so agent actions are attributed to a dedicated
+bot identity (`app-name[bot]`).
+
+Installed as `mcp-github`; registered as `github`.
 
 ## Setup: create and install the GitHub App
 
@@ -112,7 +116,7 @@ that the comment shows up as `<app-name>[bot]`, not your own account.
 - Installation Access Tokens are short-lived (≤1h) and cached in-memory for ~50 minutes — there's
   no long-lived token sitting on disk to rotate.
 
-## Read Tools
+## Read tools
 
 - `gh_repo_list`
 - `gh_repo_get`
@@ -136,23 +140,31 @@ that the comment shows up as `<app-name>[bot]`, not your own account.
 
 The review-read tools take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review.
 
-## Write Tools
+## Write tools
+
+Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
 
 - `gh_pr_create` — when `base` is omitted it defaults to the repo's default branch (rather than 422ing); a genuine 422 surfaces the API's `errors` array.
 - `gh_pr_edit`
 - `gh_pr_comment`
 - `gh_pr_merge`
 - `gh_pr_request_reviewers` — to request a Copilot review, pass the login `Copilot` (not the `copilot-pull-request-reviewer[bot]` app slug). GitHub silently ignores an unrecognized reviewer login, so the tool adds a `warning` naming anyone it dropped.
+- `gh_run_rerun` — rerun a GitHub Actions workflow run, or only its failed jobs (`failed_only`).
 - `gh_issue_create`
 - `gh_issue_comment`
 - `gh_issue_edit` — change state (close/reopen via `state` + `state_reason`), title, body, or labels.
 - `gh_review_comment_reply`
 - `gh_review_thread_resolve`
 
-Every write tool invocation is recorded for accountability in a local SQLite audit log at `~/.mcp/audit.db`. Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
+Every write invocation is recorded in a local SQLite audit log at `~/.mcp/audit.db`.
 
-## Features
+## Behavior
 
-- **Schema Validation**: Uses Pydantic to validate inputs (e.g., repository names, issue numbers) before making GitHub API calls, rejecting malformed inputs.
-- **Enhanced Audit Logging**: The SQLite audit log captures not just the command, but also the execution duration, success status, and full stderr for complete observability.
-- **Error Handling**: On failure, the server returns context rather than raw Python stack traces.
+- **Input validation** — inputs (repository slugs, refs, issue numbers) are validated with Pydantic before any API call; malformed inputs are rejected.
+- **Audit logging** — the audit log records each write's command, execution duration, success status, and full stderr.
+- **Error handling** — on failure the server returns context rather than a raw Python stack trace.
+
+## Configuration
+
+- `MCP_GITHUB_ALLOW_WRITE`: Set to `1` to enable the write tools. Unset, all write tools are refused; read tools always work.
+- `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`: GitHub App credentials — see [Setup](#setup-create-and-install-the-github-app).

@@ -13,20 +13,26 @@ under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
 
 ```
 src/mcp_servers/
-├── github/           # GitHub server (async httpx + GitHub App Auth) → mcp-github
-│   ├── auth.py       # JWT + Installation Access Token exchange
-│   ├── client.py     # shared httpx wrapper, validation, pagination — reuse, don't copy
-│   └── tools/        # one module per tool group (prs, issues, actions, reviews, ...)
-└── <next>/           # future servers live here
-tests/
+├── github/           # GitHub App access (REST + GraphQL) → mcp-github
+├── workspace/        # read-only local git surveys   → mcp-workspace
+├── data/             # SQL over local files (DuckDB)  → mcp-data
+├── dispatcher/       # async subagent job dispatch    → mcp-dispatcher
+└── lsp/              # LSP router + tree-sitter        → mcp-lsp
+tests/                # mirrors src/, per server
+docs/                 # one page per server
 .github/workflows/ci.yml
 ```
+
+Each server subpackage follows the same shape: `server.py` (the `FastMCP` entry point and
+`main()`), a `tools/` package (one module per tool group), a `models/` package (Pydantic
+argument schemas), and its own plumbing (`client.py`, `utils.py`, `auth.py` as needed — the
+`github` server's `auth.py` handles the JWT → Installation Access Token exchange).
 
 ## Conventions
 
 - **Tooling:** `uv` for deps/venv; `ruff` for lint + format; `ty` for type checking;
   `pytest` for tests; `pre-commit` as the local gate wiring them together.
-- **Python:** 3.12+, type hints preferred, `from __future__ import annotations`.
+- **Python:** 3.12–3.13, type hints preferred, `from __future__ import annotations`.
 - **Servers are thin:** a server maps agent-facing tools onto an underlying CLI/API. Keep
   domain logic minimal; push shared plumbing into that server's own `client.py`/`utils.py`
   (there is no cross-server `_common` package — each server owns its plumbing).
@@ -41,7 +47,7 @@ tests/
 1. `src/mcp_servers/<name>/server.py`: a `FastMCP("<name>")` entry point and `def main(): mcp.run()`.
 2. For small servers, put `@mcp.tool()` functions directly in `server.py`. For larger servers, extract logic into a `tools/` directory and register them in `server.py`.
 3. Add `<name> = "mcp_servers.<name>.server:main"` under `[project.scripts]`.
-4. Add tests under `tests/`; update the README server table.
+4. Add tests under `tests/`, a `docs/<name>.md` page, and a row to the README server table.
 
 ## Commands
 
@@ -55,4 +61,5 @@ uv run pytest
 uvx pre-commit run --all-files   # run every gate, as CI would
 ```
 
-CI runs ruff (check + format), `ty`, and pytest on every PR.
+CI runs ruff (check + format), `ty`, and pytest on every PR. Test coverage is gated at 100%
+(`pytest --cov=src --cov-fail-under=100`).
