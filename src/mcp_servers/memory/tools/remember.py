@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+from datetime import datetime
+
+from ..client import get_embedding
+from ..models.schemas import RememberArgs
+from .db import get_db_conn
+
+
+def _execute_remember(args: RememberArgs) -> str:
+    # 1. Resolve key uniqueness and generate an ID
+    mem_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+
+    # Get embedding vector (optional)
+    embedding_val = get_embedding(args.content)
+
+    tags_str = json.dumps(args.tags) if args.tags is not None else None
+
+    with get_db_conn(read_only=False) as conn:
+        existing_id = None
+        if args.key:
+            # Check if key already exists
+            cursor = conn.execute("SELECT id FROM memories WHERE key = ?", [args.key])
+            row = cursor.fetchone()
+            if row:
+                existing_id = row[0]
+
+        if existing_id:
+            # Update the existing memory
+            conn.execute(
+                """
+                UPDATE memories
+                SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                [
+                    args.content,
+                    args.category,
+                    tags_str,
+                    embedding_val,
+                    now,
+                    existing_id,
+                ],
+            )
+            return json.dumps(
+                {
+                    "status": "success",
+                    "action": "updated",
+                    "id": existing_id,
+                    "key": args.key,
+                }
+            )
+        else:
+            # Insert a new memory
+            conn.execute(
+                """
+                INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    mem_id,
+                    args.key,
+                    args.content,
+                    args.category,
+                    tags_str,
+                    embedding_val,
+                    now,
+                    now,
+                ],
+            )
+            return json.dumps(
+                {
+                    "status": "success",
+                    "action": "created",
+                    "id": mem_id,
+                    "key": args.key,
+                }
+            )
+
+
+async def remember(args: RememberArgs) -> str:
+    """Store a fact, preference, project detail, or instruction in long-term memory.
+
+    If a memory with the same key already exists, it is overwritten with the new content.
+
+    Args:
+        content: The text/fact to remember.
+        key: Unique lookup key (optional).
+        category: Category group (optional).
+        tags: List of labels (optional).
+    """
+    return await asyncio.to_thread(_execute_remember, args)
