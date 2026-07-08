@@ -256,6 +256,8 @@ def _cap_and_spill(
     display_items: list,
     formatted_lines: list[str],
     max_n: int = 100,
+    *,
+    hint: str = "narrow with kinds/top_level or query the full spill file",
 ) -> str:
     """Limit the returned lines to max_n, and spill the full results payload to a JSONL file.
 
@@ -296,9 +298,7 @@ def _cap_and_spill(
                 item_count += 1
 
         more_count = total_items - max_n
-        kept_lines.append(
-            f"... {more_count} more (narrow with kinds/top_level or query the full spill file)"
-        )
+        kept_lines.append(f"... {more_count} more ({hint})")
 
         posix_spill_path = Path(spill_path).as_posix()
         kept_lines.append(

@@ -49,7 +49,9 @@ async def ts_query(filepath: str, query: str, language: str | None = None) -> st
             f"@{r['capture']} [{r['type']}] {filepath_obj}:{r['start_line']}:{r['start_char']}  {text_preview}"
         )
 
-    return utils._cap_and_spill(results, results, lines)
+    return utils._cap_and_spill(
+        results, results, lines, hint="refine the query pattern or query the full spill file"
+    )
 
 
 async def ts_outline(filepath: str, language: str | None = None) -> str:
@@ -85,7 +87,9 @@ async def ts_outline(filepath: str, language: str | None = None) -> str:
         lines.append(
             f"{indent}{sym['kind']} {sym['name']}  {filepath_obj}:{sym['start_line']}-{sym['end_line']}"
         )
-    return utils._cap_and_spill(symbols, symbols, lines)
+    return utils._cap_and_spill(
+        symbols, symbols, lines, hint="file has many symbols; query the full spill file for all"
+    )
 
 
 async def ts_extract(filepath: str, node_type: str, name: str, language: str | None = None) -> str:

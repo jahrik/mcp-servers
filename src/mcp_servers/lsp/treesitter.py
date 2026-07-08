@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import tree_sitter as ts
@@ -78,8 +79,13 @@ def parse_file(filepath: Path, language: str | None = None) -> tuple[ts.Tree, st
     return tree, language
 
 
-def run_query(tree: ts.Tree, language: str, pattern: str) -> list[dict]:
-    """Run a tree-sitter query and return captures."""
+_MAX_QUERY_RESULTS = 1000
+
+
+def run_query(
+    tree: ts.Tree, language: str, pattern: str, max_results: int = _MAX_QUERY_RESULTS
+) -> list[dict]:
+    """Run a tree-sitter query and return captures (capped at max_results)."""
     lang = _load_language(language)
     query = ts.Query(lang, pattern)
     cursor = ts.QueryCursor(query)
@@ -100,6 +106,8 @@ def run_query(tree: ts.Tree, language: str, pattern: str) -> list[dict]:
                         "end_char": node.end_point[1],
                     }
                 )
+                if len(results) >= max_results:
+                    return results
     return results
 
 
@@ -240,10 +248,18 @@ class InvalidNodeTypeError(ValueError):
     pass
 
 
+_VALID_NODE_TYPE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
 def extract_node(
     tree: ts.Tree, language: str, source: bytes, node_type: str, name: str
 ) -> dict | None:
     """Find and extract a named node's full text."""
+    if not _VALID_NODE_TYPE.match(node_type):
+        raise InvalidNodeTypeError(
+            f"Invalid node type '{node_type}': must be lowercase letters, digits, and underscores"
+        )
+
     lang = _load_language(language)
 
     query_str = f"({node_type} name: (_) @name) @def"

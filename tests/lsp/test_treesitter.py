@@ -133,6 +133,11 @@ class TestRunQuery:
         results = run_query(tree, lang, "(while_statement) @loop")
         assert results == []
 
+    def test_max_results_cap(self, python_file):
+        tree, lang = parse_file(python_file)
+        results = run_query(tree, lang, "(identifier) @id", max_results=2)
+        assert len(results) == 2
+
     def test_go_query(self, go_file):
         tree, lang = parse_file(go_file)
         results = run_query(tree, lang, "(function_declaration name: (identifier) @name)")
@@ -346,7 +351,7 @@ class TestAdditionalLanguages:
         assert result is not None
         assert "fn distance" in result["text"]
 
-    def test_extract_invalid_node_type(self, tmp_path):
+    def test_extract_invalid_node_type_query_fails(self, tmp_path):
         from mcp_servers.lsp.treesitter import InvalidNodeTypeError
 
         f = tmp_path / "example.py"
@@ -355,6 +360,16 @@ class TestAdditionalLanguages:
         source = f.read_bytes()
         with pytest.raises(InvalidNodeTypeError, match="Invalid node type"):
             extract_node(tree, lang, source, "nonexistent_node_type_xyz", "foo")
+
+    def test_extract_invalid_node_type_regex(self, tmp_path):
+        from mcp_servers.lsp.treesitter import InvalidNodeTypeError
+
+        f = tmp_path / "example.py"
+        f.write_text(PYTHON_SOURCE)
+        tree, lang = parse_file(f)
+        source = f.read_bytes()
+        with pytest.raises(InvalidNodeTypeError, match="must be lowercase"):
+            extract_node(tree, lang, source, "Bad-Node(Type)", "foo")
 
 
 class TestEdgeCases:
