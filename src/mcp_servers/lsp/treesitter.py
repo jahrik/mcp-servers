@@ -236,6 +236,10 @@ def get_scope_at_position(tree: ts.Tree, language: str, line: int, char: int) ->
     return scopes
 
 
+class InvalidNodeTypeError(ValueError):
+    pass
+
+
 def extract_node(
     tree: ts.Tree, language: str, source: bytes, node_type: str, name: str
 ) -> dict | None:
@@ -245,8 +249,8 @@ def extract_node(
     query_str = f"({node_type} name: (_) @name) @def"
     try:
         query = ts.Query(lang, query_str)
-    except Exception:
-        return None
+    except Exception as e:
+        raise InvalidNodeTypeError(f"Invalid node type '{node_type}': {e}") from e
 
     cursor = ts.QueryCursor(query)
     matches = cursor.matches(tree.root_node)

@@ -347,12 +347,14 @@ class TestAdditionalLanguages:
         assert "fn distance" in result["text"]
 
     def test_extract_invalid_node_type(self, tmp_path):
+        from mcp_servers.lsp.treesitter import InvalidNodeTypeError
+
         f = tmp_path / "example.py"
         f.write_text(PYTHON_SOURCE)
         tree, lang = parse_file(f)
         source = f.read_bytes()
-        result = extract_node(tree, lang, source, "nonexistent_node_type_xyz", "foo")
-        assert result is None
+        with pytest.raises(InvalidNodeTypeError, match="Invalid node type"):
+            extract_node(tree, lang, source, "nonexistent_node_type_xyz", "foo")
 
 
 class TestEdgeCases:
@@ -376,7 +378,7 @@ class TestEdgeCases:
         ):
             get_scope_at_position(tree, "python", 0, 0)
 
-    def test_outline_deduplicates(self, tmp_path):
+    def test_outline_keeps_distinct_same_named_symbols(self, tmp_path):
         f = tmp_path / "dup.py"
         f.write_text("def foo(): pass\ndef foo(): pass\n")
         tree, lang = parse_file(f)
@@ -632,3 +634,11 @@ class TestToolFunctions:
 
         result = await ts_extract(str(self.tmp_path / "nope.py"), "function_definition", "foo")
         assert "Error" in result
+
+    @pytest.mark.asyncio
+    async def test_ts_extract_invalid_node_type(self):
+        from mcp_servers.lsp.tools.treesitter import ts_extract
+
+        result = await ts_extract(str(self.python_file), "nonexistent_node_xyz", "foo")
+        assert "Error" in result
+        assert "Invalid node type" in result

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from mcp_servers.lsp import utils
 from mcp_servers.lsp.treesitter import (
+    InvalidNodeTypeError,
     extract_node,
     get_outline,
     get_scope_at_position,
@@ -45,12 +46,10 @@ async def ts_query(filepath: str, query: str, language: str | None = None) -> st
         if len(text_preview) > 100:
             text_preview = text_preview[:100] + "..."
         lines.append(
-            f"@{r['capture']} [{r['type']}] {filepath}:{r['start_line']}:{r['start_char']}  {text_preview}"
+            f"@{r['capture']} [{r['type']}] {filepath_obj}:{r['start_line']}:{r['start_char']}  {text_preview}"
         )
 
-    display_items = results
-    raw_results = results
-    return utils._cap_and_spill(raw_results, display_items, lines)
+    return utils._cap_and_spill(results, results, lines)
 
 
 async def ts_outline(filepath: str, language: str | None = None) -> str:
@@ -84,9 +83,9 @@ async def ts_outline(filepath: str, language: str | None = None) -> str:
     for sym in symbols:
         indent = "  " if sym["start_char"] > 0 else ""
         lines.append(
-            f"{indent}{sym['kind']} {sym['name']}  {filepath}:{sym['start_line']}-{sym['end_line']}"
+            f"{indent}{sym['kind']} {sym['name']}  {filepath_obj}:{sym['start_line']}-{sym['end_line']}"
         )
-    return "\n".join(lines)
+    return utils._cap_and_spill(symbols, symbols, lines)
 
 
 async def ts_extract(filepath: str, node_type: str, name: str, language: str | None = None) -> str:
@@ -111,11 +110,14 @@ async def ts_extract(filepath: str, node_type: str, name: str, language: str | N
         return f"Error: {e}"
 
     source = filepath_obj.read_bytes()
-    result = extract_node(tree, lang, source, node_type, name)
+    try:
+        result = extract_node(tree, lang, source, node_type, name)
+    except InvalidNodeTypeError as e:
+        return f"Error: {e}"
     if result is None:
         return f"No {node_type} named '{name}' found."
 
-    header = f"# {filepath}:{result['start_line']}-{result['end_line']}"
+    header = f"# {filepath_obj}:{result['start_line']}-{result['end_line']}"
     return f"{header}\n{result['text']}"
 
 
