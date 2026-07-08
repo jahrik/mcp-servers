@@ -8,6 +8,10 @@ the name tells the agent which SQL dialect and file-query idioms apply.
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
+
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
@@ -23,6 +27,10 @@ mcp.tool()(tools.duckdb_close_database)
 
 def main() -> None:
     """Console-script entry point."""
+    level = logging.getLevelNamesMapping().get(
+        os.getenv("MCP_LOG_LEVEL", "WARNING").upper(), logging.WARNING
+    )
+    logging.basicConfig(stream=sys.stderr, level=level)
     mcp.run()
 
 

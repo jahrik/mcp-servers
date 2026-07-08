@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import pathlib
@@ -6,6 +8,12 @@ from typing import Any
 from mcp.server.fastmcp import Context
 
 from mcp_servers.lsp import utils
+from mcp_servers.lsp.models.schemas import (
+    CodeActionsArgs,
+    ExecuteCodeActionArgs,
+    FilePathArgs,
+    RenameArgs,
+)
 
 _last_code_actions: dict[str, Any] = {"language_id": None, "actions": []}
 
@@ -87,17 +95,14 @@ def apply_workspace_edit(edit: dict) -> str:
     return "\n".join(results)
 
 
-async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ctx: Context) -> str:
+async def lsp_rename(args: RenameArgs, ctx: Context) -> str:
     """Rename a symbol everywhere and apply the edits to disk (IDE rename refactor).
 
     Strongly prefer over sed/grep-based find-and-replace: the language server
     rewrites only true references to this symbol across all files, leaving
     unrelated same-named identifiers untouched.
     """
-    if line < 1 or character < 0:
-        return "Error: line must be >= 1 and character must be >= 0"
-
-    path_obj = utils._prepare_file(filepath)
+    path_obj = utils._prepare_file(args.filepath)
     if isinstance(path_obj, str):
         return path_obj
 
@@ -105,8 +110,8 @@ async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ct
         uri, language_id = await utils._sync_file_with_lsp(path_obj)
         params = {
             "textDocument": {"uri": uri},
-            "position": {"line": line - 1, "character": character},
-            "newName": new_name,
+            "position": {"line": args.line - 1, "character": args.character},
+            "newName": args.new_name,
         }
         res = await utils.lsp_client.send_request(language_id, "textDocument/rename", params)
         if not res:
@@ -119,12 +124,9 @@ async def lsp_rename(filepath: str, line: int, character: int, new_name: str, ct
         return f"Error querying LSP for rename: {e}"
 
 
-async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Context) -> str:
+async def lsp_code_actions(args: CodeActionsArgs, ctx: Context) -> str:
     """Get available code actions for a specific location. Use lsp_execute_code_action to apply one."""
-    if line < 1 or character < 0:
-        return "Error: line must be >= 1 and character must be >= 0"
-
-    path_obj = utils._prepare_file(filepath)
+    path_obj = utils._prepare_file(args.filepath)
     if isinstance(path_obj, str):
         return path_obj
 
@@ -133,8 +135,8 @@ async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Contex
         params = {
             "textDocument": {"uri": uri},
             "range": {
-                "start": {"line": line - 1, "character": character},
-                "end": {"line": line - 1, "character": character},
+                "start": {"line": args.line - 1, "character": args.character},
+                "end": {"line": args.line - 1, "character": args.character},
             },
             "context": {"diagnostics": []},
         }
@@ -163,16 +165,16 @@ async def lsp_code_actions(filepath: str, line: int, character: int, ctx: Contex
         return f"Error querying LSP for code actions: {e}"
 
 
-async def lsp_execute_code_action(index: int, ctx: Context) -> str:
+async def lsp_execute_code_action(args: ExecuteCodeActionArgs, ctx: Context) -> str:
     """Execute a code action previously returned by lsp_code_actions."""
     global _last_code_actions
     actions = _last_code_actions.get("actions", [])
     language_id = _last_code_actions.get("language_id")
 
-    if index < 0 or index >= len(actions):
-        return f"Error: Invalid index {index}. Only {len(actions)} actions available."
+    if args.index >= len(actions):
+        return f"Error: Invalid index {args.index}. Only {len(actions)} actions available."
 
-    action = actions[index]
+    action = actions[args.index]
     results = []
 
     if "edit" in action:
@@ -184,16 +186,16 @@ async def lsp_execute_code_action(index: int, ctx: Context) -> str:
         # CodeAction might return a Command directly or inside a CodeAction
         if isinstance(command_obj, str):
             cmd_name = command_obj
-            args = []
+            cmd_args = []
         else:
             cmd_name = command_obj.get("command")
-            args = command_obj.get("arguments", [])
+            cmd_args = command_obj.get("arguments", [])
 
         try:
             res = await utils.lsp_client.send_request(
                 str(language_id),
                 "workspace/executeCommand",
-                {"command": cmd_name, "arguments": args},
+                {"command": cmd_name, "arguments": cmd_args},
             )
             # Some commands might also return a WorkspaceEdit!
             if isinstance(res, dict) and ("changes" in res or "documentChanges" in res):
@@ -212,13 +214,9 @@ async def lsp_execute_code_action(index: int, ctx: Context) -> str:
     return "\n".join(results)
 
 
-async def lsp_format(filepath: str, ctx: Context) -> str:
-    """Format a file using the active language server's formatting capability.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-    """
-    filepath_obj = utils._prepare_file(filepath)
+async def lsp_format(args: FilePathArgs, ctx: Context) -> str:
+    """Format a file using the active language server's formatting capability."""
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 

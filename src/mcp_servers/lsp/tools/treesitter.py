@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from mcp_servers.lsp import utils
+from mcp_servers.lsp.models.schemas import (
+    TsExtractArgs,
+    TsOutlineArgs,
+    TsQueryArgs,
+    TsScopeArgs,
+)
 from mcp_servers.lsp.treesitter import (
     InvalidNodeTypeError,
     extract_nodes,
@@ -11,29 +17,24 @@ from mcp_servers.lsp.treesitter import (
 )
 
 
-async def ts_query(filepath: str, query: str, language: str | None = None) -> str:
+async def ts_query(args: TsQueryArgs) -> str:
     """Run a tree-sitter structural query pattern against a file.
 
     Use this to find code patterns by syntax structure (e.g. all functions with
     a specific decorator, all try blocks, all assignments to a variable).
     Works instantly without an LSP server. Supports Python, Go, Rust, TypeScript, JavaScript.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        query: Tree-sitter S-expression query pattern (e.g. '(function_definition name: (identifier) @name)').
-        language: Language override (auto-detected from extension if omitted).
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
     try:
-        tree, lang = parse_file(filepath_obj, language)
+        tree, lang = parse_file(filepath_obj, args.language)
     except ValueError as e:
         return f"Error: {e}"
 
     try:
-        results = run_query(tree, lang, query)
+        results = run_query(tree, lang, args.query)
     except Exception as e:
         return f"Error in query: {e}"
 
@@ -54,22 +55,18 @@ async def ts_query(filepath: str, query: str, language: str | None = None) -> st
     )
 
 
-async def ts_outline(filepath: str, language: str | None = None) -> str:
+async def ts_outline(args: TsOutlineArgs) -> str:
     """Get a fast symbol outline of a file using tree-sitter (no LSP server needed).
 
     Returns classes and functions with their line positions. Works for languages
     without a configured LSP and has zero startup delay.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        language: Language override (auto-detected from extension if omitted).
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
     try:
-        tree, lang = parse_file(filepath_obj, language)
+        tree, lang = parse_file(filepath_obj, args.language)
     except ValueError as e:
         return f"Error: {e}"
 
@@ -92,34 +89,28 @@ async def ts_outline(filepath: str, language: str | None = None) -> str:
     )
 
 
-async def ts_extract(filepath: str, node_type: str, name: str, language: str | None = None) -> str:
+async def ts_extract(args: TsExtractArgs) -> str:
     """Extract the full source text of a named node (function, class) by structural identity.
 
     Use when you need the complete source of a specific function or class without
     knowing exact line numbers.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        node_type: Tree-sitter node type (e.g. 'function_definition', 'class_definition').
-        name: Name of the symbol to extract.
-        language: Language override (auto-detected from extension if omitted).
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
     try:
-        tree, lang = parse_file(filepath_obj, language)
+        tree, lang = parse_file(filepath_obj, args.language)
     except ValueError as e:
         return f"Error: {e}"
 
     source = filepath_obj.read_bytes()
     try:
-        results = extract_nodes(tree, lang, source, node_type, name)
+        results = extract_nodes(tree, lang, source, args.node_type, args.name)
     except InvalidNodeTypeError as e:
         return f"Error: {e}"
     if not results:
-        return f"No {node_type} named '{name}' found."
+        return f"No {args.node_type} named '{args.name}' found."
 
     blocks = [f"# {filepath_obj}:{r['start_line']}-{r['end_line']}\n{r['text']}" for r in results]
     if len(blocks) == 1:
@@ -127,39 +118,28 @@ async def ts_extract(filepath: str, node_type: str, name: str, language: str | N
 
     lines_list = ", ".join(str(r["start_line"]) for r in results)
     note = (
-        f"# {len(blocks)} {node_type} nodes named '{name}' found "
+        f"# {len(blocks)} {args.node_type} nodes named '{args.name}' found "
         f"(at lines {lines_list}); showing all:"
     )
     return note + "\n" + "\n\n".join(blocks)
 
 
-async def ts_scope_at_position(
-    filepath: str, line: int, char: int = 0, language: str | None = None
-) -> str:
+async def ts_scope_at_position(args: TsScopeArgs) -> str:
     """Identify the enclosing scopes (function, class, module) at a given position.
 
     Useful for understanding what context a specific line is in.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        line: 1-indexed line number.
-        char: 0-indexed character position (default 0).
-        language: Language override (auto-detected from extension if omitted).
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
-    if line < 1 or char < 0:
-        return "Error: line must be >= 1 and char must be >= 0"
-
     try:
-        tree, lang = parse_file(filepath_obj, language)
+        tree, lang = parse_file(filepath_obj, args.language)
     except ValueError as e:
         return f"Error: {e}"
 
     try:
-        scopes = get_scope_at_position(tree, lang, line - 1, char)
+        scopes = get_scope_at_position(tree, lang, args.line - 1, args.char)
     except ValueError as e:
         return f"Error: {e}"
 

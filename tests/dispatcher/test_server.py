@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 import subprocess
-from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_mock import MockerFixture, MockType
 
 from mcp_servers.dispatcher import server
 from mcp_servers.dispatcher.models.schemas import (
@@ -27,14 +28,14 @@ def mock_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def mock_subprocess() -> Generator[MagicMock, None, None]:
-    with patch("mcp_servers.dispatcher.tools.jobs.subprocess.Popen") as mock_popen:
-        yield mock_popen
+def mock_subprocess(mocker: MockerFixture) -> MockType:
+    # Spawning a real `agy` subprocess is the true I/O boundary — fake only that.
+    return mocker.patch("mcp_servers.dispatcher.tools.jobs.subprocess.Popen")
 
 
 @pytest.mark.parametrize("allow_val", ["true", "1", "TRUE", "True"])
 def test_submit_job(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch, allow_val: str
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch, allow_val: str
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", allow_val)
 
@@ -73,7 +74,7 @@ def test_submit_job(
 
 
 def test_get_job_status(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
@@ -96,7 +97,7 @@ def test_get_job_status_not_found(mock_db: Path) -> None:
 
 
 def test_get_job_status_invalid_json(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "1")
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
@@ -111,7 +112,7 @@ def test_get_job_status_invalid_json(
 
 
 def test_submit_job_stamps_timestamps(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
@@ -123,7 +124,7 @@ def test_submit_job_stamps_timestamps(
 
 
 def test_update_job_status(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"k": "v"}))
@@ -183,7 +184,7 @@ def test_submit_job_non_serializable_payload(
 
 
 def test_submit_job_subprocess_exception(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     mock_subprocess.side_effect = Exception("Popen failed")
@@ -202,7 +203,7 @@ def test_submit_job_subprocess_exception(
 
 
 def test_update_job_status_terminal_is_immutable(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
@@ -222,7 +223,7 @@ def test_update_job_status_terminal_is_immutable(
 
 
 def test_submit_job_rejects_oversized_payload(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     oversized = {"blob": "x" * (jobs.MAX_PAYLOAD_BYTES + 1)}
@@ -242,7 +243,7 @@ def test_submit_job_rejects_overlong_worker_type() -> None:
 
 
 def test_connections_are_closed(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every SQLite connection the tools open must be closed (no fd leak)."""
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
@@ -269,7 +270,7 @@ def test_connections_are_closed(
 
 
 def test_list_jobs_newest_first(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
@@ -297,7 +298,7 @@ def test_list_jobs_newest_first(
 
 
 def test_list_jobs_status_filter(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
@@ -315,7 +316,7 @@ def test_list_jobs_status_filter(
 
 
 def test_list_jobs_limit(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
@@ -327,7 +328,7 @@ def test_list_jobs_limit(
 
 
 def test_cleanup_jobs_removes_only_terminal(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "10")
@@ -347,7 +348,7 @@ def test_cleanup_jobs_removes_only_terminal(
 
 
 def test_cleanup_jobs_older_than_keeps_fresh(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
@@ -360,7 +361,7 @@ def test_cleanup_jobs_older_than_keeps_fresh(
 
 
 def test_submit_job_respects_max_running(
-    mock_db: Path, mock_subprocess: MagicMock, monkeypatch: pytest.MonkeyPatch
+    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
     monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "2")

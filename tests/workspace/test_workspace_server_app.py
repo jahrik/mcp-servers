@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import mcp_servers.workspace.server
 
 

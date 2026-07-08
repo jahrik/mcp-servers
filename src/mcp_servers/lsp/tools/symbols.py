@@ -5,32 +5,20 @@ import asyncio
 from mcp.server.fastmcp import Context
 
 from mcp_servers.lsp import utils
+from mcp_servers.lsp.models.schemas import (
+    DocumentSymbolsArgs,
+    PositionArgs,
+    WorkspaceSymbolsArgs,
+)
 
 
-async def lsp_document_symbols(
-    filepath: str,
-    ctx: Context,
-    *,
-    detail: str = "compact",
-    kinds: list[str] | None = None,
-    top_level: bool = False,
-) -> str:
+async def lsp_document_symbols(args: DocumentSymbolsArgs, ctx: Context) -> str:
     """Outline all symbols (classes, functions, methods, ...) in a file (IDE document outline).
 
     Prefer over grepping for `def`/`class` to map a file's structure: returns
     each symbol's kind, position, and nesting.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        detail: "compact" (default) for one `Kind name  path:line` line per
-            symbol, indented by nesting; "full" for the raw LSP JSON.
-        kinds: Optional list of symbol kinds to filter by (e.g. ["Class", "Method"]).
-        top_level: If True, returns only top-level symbols without nesting.
     """
-    if detail not in ("compact", "full"):
-        return "Error: detail must be 'compact' or 'full'"
-
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
@@ -45,14 +33,14 @@ async def lsp_document_symbols(
 
         # Filter response
         filtered_response = (
-            utils._filter_symbols(response, kinds, top_level)
-            if (kinds is not None or top_level)
+            utils._filter_symbols(response, args.kinds, args.top_level)
+            if (args.kinds is not None or args.top_level)
             else response
         )
         if not filtered_response:
             return "No matching symbols found in this document."
 
-        if detail == "full":
+        if args.detail == "full":
             import json
 
             return json.dumps(filtered_response, indent=2)
@@ -65,33 +53,15 @@ async def lsp_document_symbols(
         return f"Error querying LSP: {e}"
 
 
-async def lsp_workspace_symbols(
-    query: str,
-    ctx: Context,
-    *,
-    detail: str = "compact",
-    kinds: list[str] | None = None,
-    top_level: bool = False,
-) -> str:
+async def lsp_workspace_symbols(args: WorkspaceSymbolsArgs, ctx: Context) -> str:
     """Find where a symbol is defined anywhere in the project (IDE symbol search / go-to-symbol).
 
     Prefer over grep to locate a class/function by name: it matches
     declarations across the whole workspace and returns their source
     locations, without the noise of textual matches in comments or strings.
-
-    Args:
-        query: The symbol name or partial name to search for.
-        detail: "compact" (default) for one `Kind name  path:line` line per
-            match, grouped by language; "full" for the raw LSP JSON.
-        kinds: Optional list of symbol kinds to filter by (e.g. ["Class", "Method"]).
-        top_level: If True, returns only top-level symbols (note: workspace symbols
-            are typically already flat, but filter applies for consistency).
     """
-    if detail not in ("compact", "full"):
-        return "Error: detail must be 'compact' or 'full'"
-
     try:
-        params = {"query": query}
+        params = {"query": args.query}
         results = []
         languages = set(utils.lsp_client.sessions.keys()) | {
             "python",
@@ -111,7 +81,7 @@ async def lsp_workspace_symbols(
                 pass
 
         if not results:
-            return f"No workspace symbols found matching query '{query}'."
+            return f"No workspace symbols found matching query '{args.query}'."
 
         # Filter results
         filtered_results = []
@@ -123,8 +93,8 @@ async def lsp_workspace_symbols(
             for lang, symbols in group.items():
                 merged_results_for_spill.extend(symbols)
                 filtered = (
-                    utils._filter_symbols(symbols, kinds, top_level)
-                    if (kinds is not None or top_level)
+                    utils._filter_symbols(symbols, args.kinds, args.top_level)
+                    if (args.kinds is not None or args.top_level)
                     else symbols
                 )
                 if filtered:
@@ -137,10 +107,11 @@ async def lsp_workspace_symbols(
 
         if not filtered_results:
             return (
-                f"No workspace symbols found matching query '{query}' with the specified filters."
+                f"No workspace symbols found matching query "
+                f"'{args.query}' with the specified filters."
             )
 
-        if detail == "full":
+        if args.detail == "full":
             import json
 
             return json.dumps(filtered_results, indent=2)
@@ -152,28 +123,23 @@ async def lsp_workspace_symbols(
         return f"Error querying LSP: {e}"
 
 
-async def lsp_document_highlight(filepath: str, line: int, char: int, ctx: Context) -> str:
+async def lsp_document_highlight(args: PositionArgs, ctx: Context) -> str:
     """Highlight all occurrences of a symbol within one file (IDE highlight-references).
 
     Prefer over grep to see every read/write of a local variable or parameter
     inside a function: scoped to the file and matched semantically, so it
     won't catch same-named symbols from other scopes.
-
-    Args:
-        filepath: Absolute or workspace-relative path to the file.
-        line: 1-indexed line number.
-        char: 0-indexed character position.
     """
-    filepath_obj = utils._prepare_file(filepath)
+    filepath_obj = utils._prepare_file(args.filepath)
     if isinstance(filepath_obj, str):
         return filepath_obj
 
-    if line < 1 or char < 0:
-        return "Error: line must be >= 1 and char must be >= 0"
-
     try:
         uri, language_id = await utils._sync_file_with_lsp(filepath_obj)
-        params = {"textDocument": {"uri": uri}, "position": {"line": line - 1, "character": char}}
+        params = {
+            "textDocument": {"uri": uri},
+            "position": {"line": args.line - 1, "character": args.char},
+        }
         response = await utils.lsp_client.send_request(
             language_id, "textDocument/documentHighlight", params
         )

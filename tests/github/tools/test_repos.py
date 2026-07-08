@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 import pytest
@@ -5,16 +7,6 @@ import pytest
 from mcp_servers.github.client import GhError
 from mcp_servers.github.models.schemas import RepoGetArgs, RepoListArgs
 from mcp_servers.github.tools.repos import gh_repo_get, gh_repo_list
-
-
-@pytest.fixture(autouse=True)
-def mock_token(monkeypatch):
-    import mcp_servers.github.client
-
-    async def get_token():
-        return "mock-token"
-
-    monkeypatch.setattr(mcp_servers.github.client, "get_installation_token", get_token)
 
 
 @pytest.mark.asyncio

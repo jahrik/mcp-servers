@@ -62,8 +62,17 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "PT"]
 ignore = ["E501", "PT011"]
 
+[tool.ruff.lint.isort]
+# Enforce `from __future__ import annotations` everywhere (I002) so the
+# deferred-annotation convention can't silently drift back out.
+required-imports = ["from __future__ import annotations"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: end-to-end tests that drive a real language server (pyright); skipped when it is not installed",
+]
 
 [tool.ty.environment]
 # `jq` is a C extension with no bundled type info; typings/jq.pyi covers it.

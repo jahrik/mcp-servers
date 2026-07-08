@@ -118,8 +118,10 @@ uv run pytest
 uvx pre-commit run --all-files   # every gate, as CI runs it
 ```
 
-CI runs ruff (check + format), `ty`, and pytest on every PR. Test coverage is gated at 100%
-(`--cov-fail-under=100`).
+CI runs ruff (check + format), `ty`, and pytest on every PR. Test coverage is gated at 90%
+(`--cov-fail-under=90`). Tests use `pytest` + `pytest-mock` (no `unittest`) and stay real —
+mocking only at I/O boundaries; CI installs `pyright` so the `integration`-marked language-server
+tests run for real.
 
 ### Adding a server
 

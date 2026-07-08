@@ -12,6 +12,10 @@ enabled by setting `MCP_GITHUB_ALLOW_WRITE=1`.
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
+
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
@@ -53,6 +57,10 @@ mcp.tool()(tools.gh_api_graphql)
 
 def main() -> None:
     """Console-script entry point — run the server over stdio."""
+    level = logging.getLevelNamesMapping().get(
+        os.getenv("MCP_LOG_LEVEL", "WARNING").upper(), logging.WARNING
+    )
+    logging.basicConfig(stream=sys.stderr, level=level)
     mcp.run()
 
 

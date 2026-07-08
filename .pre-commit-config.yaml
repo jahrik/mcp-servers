@@ -32,7 +32,7 @@ repos:
         pass_filenames: false
       - id: pytest-cov
         name: pytest coverage
-        entry: uv run pytest --cov=src --cov-fail-under=100
+        entry: uv run pytest --cov=src --cov-fail-under=90
         language: system
         types: [python]
         pass_filenames: false

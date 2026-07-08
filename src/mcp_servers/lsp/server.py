@@ -6,6 +6,9 @@ for hover information, diagnostics, and more.
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -55,6 +58,10 @@ mcp.tool()(tools.ts_scope_at_position)
 
 def main() -> None:
     """Run the lsp MCP server."""
+    level = logging.getLevelNamesMapping().get(
+        os.getenv("MCP_LOG_LEVEL", "WARNING").upper(), logging.WARNING
+    )
+    logging.basicConfig(stream=sys.stderr, level=level)
     mcp.run()
 
 
