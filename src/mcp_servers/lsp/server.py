@@ -47,6 +47,10 @@ mcp.tool()(tools.lsp_rename)
 mcp.tool()(tools.lsp_code_actions)
 mcp.tool()(tools.lsp_execute_code_action)
 mcp.tool()(tools.lsp_format)
+mcp.tool()(tools.ts_query)
+mcp.tool()(tools.ts_outline)
+mcp.tool()(tools.ts_extract)
+mcp.tool()(tools.ts_scope_at_position)
 
 
 def main() -> None:

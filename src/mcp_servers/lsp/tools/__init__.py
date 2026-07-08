@@ -21,6 +21,7 @@ from mcp_servers.lsp.tools.symbols import (
 )
 
 from .diagnostics import lsp_diagnostics
+from .treesitter import ts_extract, ts_outline, ts_query, ts_scope_at_position
 
 __all__ = [
     "lsp_hover",
@@ -37,4 +38,8 @@ __all__ = [
     "lsp_code_actions",
     "lsp_execute_code_action",
     "lsp_format",
+    "ts_query",
+    "ts_outline",
+    "ts_extract",
+    "ts_scope_at_position",
 ]
