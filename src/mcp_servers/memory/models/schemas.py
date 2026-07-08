@@ -73,6 +73,11 @@ class ListMemoriesArgs(BaseModel, frozen=True):
         le=1000,
         description="Maximum number of memories to return (defaults to 50).",
     )
+    offset: int = Field(
+        0,
+        ge=0,
+        description="Number of memories to skip for pagination (defaults to 0).",
+    )
 
 
 class SyncExistingDataArgs(BaseModel, frozen=True):

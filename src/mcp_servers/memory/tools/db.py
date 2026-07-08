@@ -6,7 +6,6 @@ import random
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any
 
 import duckdb
 
@@ -21,7 +20,7 @@ def init_db(conn: duckdb.DuckDBPyConnection) -> None:
         """
         CREATE TABLE IF NOT EXISTS memories (
             id VARCHAR PRIMARY KEY,
-            key VARCHAR,
+            key VARCHAR UNIQUE,
             content TEXT NOT NULL,
             category VARCHAR,
             tags VARCHAR,
@@ -45,6 +44,9 @@ def get_db_conn(
     Ensures the parent directory exists.
     """
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    if read_only and not os.path.exists(DB_PATH):
+        read_only = False
+
     last_err = None
 
     for attempt in range(max_retries):
@@ -82,15 +84,3 @@ def get_db_conn(
     raise RuntimeError(
         f"Database at {DB_PATH} is locked by another process and could not be accessed after {max_retries} attempts: {last_err}"
     )
-
-
-def execute_query(
-    query: str, params: list[Any] | None = None, read_only: bool = False
-) -> list[tuple[Any, ...]]:
-    """Helper to execute a query and return all results under retry lock protection."""
-    with get_db_conn(read_only=read_only) as conn:
-        if params is not None:
-            res = conn.execute(query, params).fetchall()
-        else:
-            res = conn.execute(query).fetchall()
-        return res

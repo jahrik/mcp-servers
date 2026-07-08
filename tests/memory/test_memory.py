@@ -369,3 +369,35 @@ def test_client_embeddings(monkeypatch, httpx_mock):
 
     res = get_embedding("hello openai")
     assert res == [0.4, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_list_memories_pagination(mock_embedding):
+    """Test pagination offset and limit functionality in list_memories."""
+    # Insert multiple facts
+    for i in range(5):
+        await remember(
+            RememberArgs(content=f"Fact number {i}", key=f"key_{i}", category="pagination")
+        )
+
+    # Verify offset=0, limit=2 returns first 2
+    list_args_1 = ListMemoriesArgs(category="pagination", limit=2, offset=0)
+    res_1 = json.loads(await list_memories(list_args_1))
+    assert len(res_1["memories"]) == 2
+    keys_1 = [m["key"] for m in res_1["memories"]]
+
+    # Verify offset=2, limit=2 returns next 2
+    list_args_2 = ListMemoriesArgs(category="pagination", limit=2, offset=2)
+    res_2 = json.loads(await list_memories(list_args_2))
+    assert len(res_2["memories"]) == 2
+    keys_2 = [m["key"] for m in res_2["memories"]]
+
+    # Verify no intersection between pages
+    assert not set(keys_1).intersection(set(keys_2))
+
+    # Verify offset=4, limit=2 returns remaining 1
+    list_args_3 = ListMemoriesArgs(category="pagination", limit=2, offset=4)
+    res_3 = json.loads(await list_memories(list_args_3))
+    assert len(res_3["memories"]) == 1
+    assert res_3["memories"][0]["key"] not in keys_1
+    assert res_3["memories"][0]["key"] not in keys_2

@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import glob
-import hashlib
 import json
+import logging
 import os
 import sqlite3
+import uuid
 from datetime import datetime
 from typing import Any
 
 from ..client import get_embedding
 from ..models.schemas import SyncExistingDataArgs
 from .db import get_db_conn
+
+logger = logging.getLogger("mcp-memory.sync")
 
 
 def parse_brain_artifacts(brain_dir: str) -> list[dict[str, Any]]:
@@ -248,19 +251,30 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
             }
         )
 
+    # Resolve embeddings and format tags outside the DB write lock context to avoid lock contention
+    prepared_memories = []
+    for m in all_memories:
+        embedding_val = get_embedding(m["content"])
+        tags_str = json.dumps(m["tags"])
+        prepared_memories.append(
+            {
+                "key": m["key"],
+                "content": m["content"],
+                "category": m["category"],
+                "tags_str": tags_str,
+                "embedding": embedding_val,
+            }
+        )
+
     # Perform DB writes
     now = datetime.now().isoformat()
     imported_count = 0
 
     with get_db_conn(read_only=False) as conn:
-        for m in all_memories:
+        for pm in prepared_memories:
             try:
-                # Calculate embedding vector (optional)
-                embedding_val = get_embedding(m["content"])
-                tags_str = json.dumps(m["tags"])
-
                 # Check if exists
-                cursor = conn.execute("SELECT id FROM memories WHERE key = ?", [m["key"]])
+                cursor = conn.execute("SELECT id FROM memories WHERE key = ?", [pm["key"]])
                 row = cursor.fetchone()
 
                 if row:
@@ -271,11 +285,18 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                         SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        [m["content"], m["category"], tags_str, embedding_val, now, row[0]],
+                        [
+                            pm["content"],
+                            pm["category"],
+                            pm["tags_str"],
+                            pm["embedding"],
+                            now,
+                            row[0],
+                        ],
                     )
                 else:
                     # Insert
-                    mem_id = str(uuid_uuid_from_key(m["key"]))
+                    mem_id = uuid_from_key(str(pm["key"]))
                     conn.execute(
                         """
                         INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
@@ -283,18 +304,18 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                         """,
                         [
                             mem_id,
-                            m["key"],
-                            m["content"],
-                            m["category"],
-                            tags_str,
-                            embedding_val,
+                            pm["key"],
+                            pm["content"],
+                            pm["category"],
+                            pm["tags_str"],
+                            pm["embedding"],
                             now,
                             now,
                         ],
                     )
                 imported_count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Failed to import memory key %s: %s", pm["key"], e)
 
     return json.dumps(
         {
@@ -309,11 +330,9 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
     )
 
 
-def uuid_uuid_from_key(key: str) -> str:
-    """Generate a stable UUID from a key name."""
-    # Construct a valid UUID v4 shape from md5 hash bytes
-    # (Just a simple deterministic UUID generator for stable IDs)
-    return str(hashlib.md5(key.encode("utf-8")).hexdigest())
+def uuid_from_key(key: str) -> str:
+    """Generate a stable UUID v5 from a key name."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, key))
 
 
 async def sync_existing_data(args: SyncExistingDataArgs) -> str:

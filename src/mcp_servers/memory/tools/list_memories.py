@@ -16,8 +16,8 @@ def _execute_list_memories(args: ListMemoriesArgs) -> str:
         sql += " WHERE category = ?"
         params.append(args.category)
 
-    sql += " ORDER BY updated_at DESC LIMIT ?"
-    params.append(args.limit)
+    sql += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+    params.extend([args.limit, args.offset])
 
     with get_db_conn(read_only=True) as conn:
         cursor = conn.execute(sql, params)
@@ -51,5 +51,6 @@ async def list_memories(args: ListMemoriesArgs) -> str:
     Args:
         category: Filter by category (optional).
         limit: Max results to return (optional).
+        offset: Number of memories to skip for pagination (optional).
     """
     return await asyncio.to_thread(_execute_list_memories, args)
