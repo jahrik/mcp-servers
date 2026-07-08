@@ -226,7 +226,7 @@ class TestGetScopeAtPosition:
         assert "Greeter" not in names
 
 
-class TestExtractNode:
+class TestExtractNodes:
     def test_extract_function(self, python_file):
         tree, lang = parse_file(python_file)
         source = python_file.read_bytes()
@@ -476,7 +476,7 @@ class TestEdgeCases:
         assert results == []
 
     def test_extract_node_query_returns_partial_captures(self, python_file):
-        """Covers the `not name_nodes or not def_nodes` guard in extract_node."""
+        """Covers the `not name_nodes or not def_nodes` guard in extract_nodes."""
         import tree_sitter as ts
 
         tree, lang = parse_file(python_file)
