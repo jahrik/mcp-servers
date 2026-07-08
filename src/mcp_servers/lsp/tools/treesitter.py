@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from mcp.server.fastmcp import Context
-
 from mcp_servers.lsp import utils
 from mcp_servers.lsp.treesitter import (
     extract_node,
@@ -12,9 +10,7 @@ from mcp_servers.lsp.treesitter import (
 )
 
 
-async def ts_query(
-    filepath: str, query: str, language: str | None = None, ctx: Context = None
-) -> str:
+async def ts_query(filepath: str, query: str, language: str | None = None) -> str:
     """Run a tree-sitter structural query pattern against a file.
 
     Use this to find code patterns by syntax structure (e.g. all functions with
@@ -57,7 +53,7 @@ async def ts_query(
     return utils._cap_and_spill(raw_results, display_items, lines)
 
 
-async def ts_outline(filepath: str, language: str | None = None, ctx: Context = None) -> str:
+async def ts_outline(filepath: str, language: str | None = None) -> str:
     """Get a fast symbol outline of a file using tree-sitter (no LSP server needed).
 
     Returns classes and functions with their line positions. Works for languages
@@ -93,9 +89,7 @@ async def ts_outline(filepath: str, language: str | None = None, ctx: Context = 
     return "\n".join(lines)
 
 
-async def ts_extract(
-    filepath: str, node_type: str, name: str, language: str | None = None, ctx: Context = None
-) -> str:
+async def ts_extract(filepath: str, node_type: str, name: str, language: str | None = None) -> str:
     """Extract the full source text of a named node (function, class) by structural identity.
 
     Use when you need the complete source of a specific function or class without
@@ -126,7 +120,7 @@ async def ts_extract(
 
 
 async def ts_scope_at_position(
-    filepath: str, line: int, char: int = 0, language: str | None = None, ctx: Context = None
+    filepath: str, line: int, char: int = 0, language: str | None = None
 ) -> str:
     """Identify the enclosing scopes (function, class, module) at a given position.
 

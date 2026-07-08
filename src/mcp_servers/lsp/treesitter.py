@@ -93,7 +93,7 @@ def run_query(tree: ts.Tree, language: str, pattern: str) -> list[dict]:
                     {
                         "capture": capture_name,
                         "type": node.type,
-                        "text": node.text.decode("utf-8", errors="replace"),
+                        "text": (node.text or b"").decode("utf-8", errors="replace"),
                         "start_line": node.start_point[0] + 1,
                         "start_char": node.start_point[1],
                         "end_line": node.end_point[0] + 1,
@@ -164,7 +164,7 @@ def get_outline(tree: ts.Tree, language: str) -> list[dict]:
         symbols.append(
             {
                 "kind": kind,
-                "name": name_node.text.decode("utf-8", errors="replace"),
+                "name": (name_node.text or b"").decode("utf-8", errors="replace"),
                 "start_line": def_node.start_point[0] + 1,
                 "end_line": def_node.end_point[0] + 1,
                 "start_char": def_node.start_point[1],
@@ -205,7 +205,7 @@ def _node_name(node: ts.Node) -> str | None:
     """Extract the name of a scope node if it has one."""
     name_node = node.child_by_field_name("name")
     if name_node:
-        return name_node.text.decode("utf-8", errors="replace")
+        return (name_node.text or b"").decode("utf-8", errors="replace")
     return None
 
 
@@ -242,11 +242,7 @@ def extract_node(
     """Find and extract a named node's full text."""
     lang = _load_language(language)
 
-    name_field = "name"
-    if language == "go" and node_type in ("method_declaration",):
-        name_field = "name"
-
-    query_str = f"({node_type} {name_field}: (_) @name) @def"
+    query_str = f"({node_type} name: (_) @name) @def"
     try:
         query = ts.Query(lang, query_str)
     except Exception:
@@ -261,7 +257,7 @@ def extract_node(
         if not name_nodes or not def_nodes:
             continue
         name_node = name_nodes[0]
-        if name_node.text.decode("utf-8", errors="replace") == name:
+        if (name_node.text or b"").decode("utf-8", errors="replace") == name:
             def_node = def_nodes[0]
             text = source[def_node.start_byte : def_node.end_byte].decode("utf-8", errors="replace")
             return {
