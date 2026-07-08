@@ -6,9 +6,10 @@ tools. Agents get IDE-grade answers about what a symbol *means* and connects to 
 imports, types, and scope — without managing JSON-RPC lifecycles, subprocesses, or document
 syncing themselves.
 
-The guiding split for agents: `rg` for text, `ast-grep` for syntax structure, and `lsp_*` for
-what a symbol *means*. Prefer these tools over grep whenever the question is semantic
-(definition, references, type, implementation, call flow, rename).
+The guiding split for agents: `rg` for text, `ts_*` for syntax structure (tree-sitter), and
+`lsp_*` for what a symbol *means*. Prefer `lsp_*` over grep whenever the question is semantic
+(definition, references, type, implementation, call flow, rename). Use `ts_*` for instant
+structural queries, cold-start outlines, or languages without a configured LSP.
 
 ## Architecture
 
@@ -90,6 +91,30 @@ Each takes `filepath`, `line` (1-indexed), and `char` (0-indexed).
   `line`, `character`.
 - `lsp_execute_code_action` — apply an action returned by `lsp_code_actions`, including any
   follow-up `workspace/executeCommand` edit. Inputs: `index`.
+
+### Tree-sitter (instant, offline structural analysis)
+
+These tools use tree-sitter grammars to parse files directly — no running language server,
+no initialization delay, no subprocess. They complement the `lsp_*` tools for cases where you
+need structural pattern matching, instant outlines during cold start, or support for languages
+without a configured LSP.
+
+Each takes `filepath` (absolute or workspace-relative) and an optional `language` override
+(auto-detected from extension when omitted). Supported: Python, Go, Rust, TypeScript, JavaScript.
+
+- `ts_query` — run a tree-sitter S-expression query pattern against a file and return matching
+  nodes with positions and text. Use for structural searches LSP cannot express (e.g. "all
+  functions with a decorator", "all try blocks without a finally").
+  Inputs: `filepath`, `query`, optional `language`.
+- `ts_outline` — fast symbol outline (classes and functions with line ranges). Works for languages
+  without a configured LSP and has zero startup delay.
+  Inputs: `filepath`, optional `language`.
+- `ts_extract` — extract the full source text of a named node (function, class) by structural
+  identity, without knowing exact line numbers.
+  Inputs: `filepath`, `node_type`, `name`, optional `language`.
+- `ts_scope_at_position` — return the chain of enclosing scopes (module, class, function) at a
+  position, outermost first.
+  Inputs: `filepath`, `line` (1-indexed), `char` (0-indexed), optional `language`.
 
 ## Configuration
 

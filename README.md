@@ -16,7 +16,7 @@ script, owning its own plumbing (HTTP client, validation, caching). One repo, on
 | `workspace`  | `mcp-workspace`  | Local git workspace surveys (dirty trees, unpushed work, stale branches) |
 | `data`       | `mcp-data`       | SQL over large local files + scratch tables across calls (DuckDB engine) |
 | `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration            |
-| `lsp`        | `mcp-lsp`        | Multi-language LSP router: semantic navigation, symbols, diagnostics, refactors |
+| `lsp`        | `mcp-lsp`        | Multi-language LSP router + tree-sitter: semantic navigation, symbols, diagnostics, refactors, structural queries |
 
 ### `github`
 
@@ -87,6 +87,12 @@ _Mutations (write to disk):_
 - `lsp_rename` — Semantic rename applied across all affected files.
 - `lsp_code_actions` — List available quick-fixes and refactors at a location.
 - `lsp_execute_code_action` — Apply one of the actions from `lsp_code_actions`.
+
+_Tree-sitter (instant, offline, no LSP server needed):_
+- `ts_query` — Run a structural S-expression pattern against a file (find syntax patterns LSP cannot express).
+- `ts_outline` — Fast symbol outline (classes, functions) without LSP startup delay.
+- `ts_extract` — Extract full source text of a named function or class by structural identity.
+- `ts_scope_at_position` — Identify enclosing scopes (module, class, function) at a position.
 
 Symbol- and hierarchy-listing tools return compact `Kind name  path:line` text by default; pass `detail="full"` for the raw LSP JSON.
 
