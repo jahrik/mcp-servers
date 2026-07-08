@@ -69,6 +69,9 @@ required-imports = ["from __future__ import annotations"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: end-to-end tests that drive a real language server (pyright); skipped when it is not installed",
+]
 
 [tool.ty.environment]
 # `jq` is a C extension with no bundled type info; typings/jq.pyi covers it.
