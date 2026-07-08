@@ -20,6 +20,42 @@ def test_candidate_roots_includes_git_children(tmp_path, monkeypatch):
     assert plain.resolve() not in roots
 
 
+def test_treesitter_workspace_symbols_finds_declarations(tmp_path, monkeypatch):
+    (tmp_path / "mod.py").write_text(
+        "class Calculator:\n    def add(self):\n        pass\n\ndef run():\n    pass\n",
+        encoding="utf-8",
+    )
+    # A noise dir that must be pruned, not walked.
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "junk.py").write_text("class ShouldBeSkipped: pass", encoding="utf-8")
+
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    results = utils._treesitter_workspace_symbols("calc")
+
+    names = {r["name"] for r in results}
+    assert "Calculator" in names
+    assert "ShouldBeSkipped" not in names  # pruned dir
+    calc = next(r for r in results if r["name"] == "Calculator")
+    assert calc["kind"] == 5  # LSP SymbolKind.Class
+    assert calc["location"]["uri"].endswith("mod.py")
+    assert calc["location"]["range"]["start"]["line"] == 0
+
+
+def test_treesitter_workspace_symbols_empty_query(tmp_path, monkeypatch):
+    (tmp_path / "mod.py").write_text("def foo(): pass", encoding="utf-8")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    assert utils._treesitter_workspace_symbols("   ") == []
+
+
+def test_treesitter_workspace_symbols_skips_unparseable(tmp_path, monkeypatch):
+    (tmp_path / "good.py").write_text("def findme(): pass", encoding="utf-8")
+    # Invalid bytes / broken syntax must be skipped, not raise.
+    (tmp_path / "bad.py").write_bytes(b"\xff\xfe def (((")
+    monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
+    names = {r["name"] for r in utils._treesitter_workspace_symbols("findme")}
+    assert "findme" in names
+
+
 def test_candidate_roots_iterdir_oserror(tmp_path, monkeypatch, mocker):
     monkeypatch.setattr("mcp_servers.lsp.utils.WORKSPACE_ROOT", str(tmp_path))
     mocker.patch.object(Path, "iterdir", side_effect=OSError)

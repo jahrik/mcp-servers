@@ -20,7 +20,7 @@ class LSPClient:
         self.sessions: dict[str, list[LSPSession | None]] = {}
         self.language_commands = {
             "python": [
-                ["pyright-langserver", "--stdio"],
+                ["ty", "server"],
                 ["ruff", "server"],
             ],
             "go": [["gopls"]],
@@ -34,7 +34,7 @@ class LSPClient:
 
         env_cmd = os.environ.get("MCP_LSP_COMMAND")
         if env_cmd:
-            self.language_commands["python"] = [shlex.split(env_cmd)]
+            self.language_commands["python"] = [shlex.split(env_cmd), ["ruff", "server"]]
 
         self.idle_timeout_secs = 600.0  # 10 minutes
         self._reap_task: asyncio.Task[None] | None = None

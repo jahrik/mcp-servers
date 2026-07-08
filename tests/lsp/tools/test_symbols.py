@@ -94,6 +94,46 @@ async def test_lsp_workspace_symbols_all_fail(mocker):
 
 
 @pytest.mark.asyncio
+async def test_lsp_workspace_symbols_treesitter_fallback(mocker):
+    """When the LSP returns nothing, fall back to a tree-sitter workspace scan."""
+    ctx = mocker.MagicMock()
+    mock_client = mocker.patch("mcp_servers.lsp.utils.lsp_client")
+    mock_client.sessions = {"python": mocker.MagicMock()}
+    # LSP yields no workspace symbols (the pyright/no-index case).
+    mock_client.send_request = mocker.AsyncMock(return_value=None)
+    mocker.patch(
+        "mcp_servers.lsp.utils._treesitter_workspace_symbols",
+        return_value=[
+            {
+                "name": "Calculator",
+                "kind": 5,
+                "location": {
+                    "uri": "file:///ws/mod.py",
+                    "range": {"start": {"line": 0, "character": 6}},
+                },
+            }
+        ],
+    )
+
+    res = await lsp_workspace_symbols(WorkspaceSymbolsArgs(query="Calc"), ctx)
+    assert "Calculator" in res
+    assert "tree-sitter" in res  # fallback group header
+
+
+@pytest.mark.asyncio
+async def test_lsp_workspace_symbols_no_lsp_no_fallback(mocker):
+    """No LSP results and no fallback matches -> the not-found message."""
+    ctx = mocker.MagicMock()
+    mock_client = mocker.patch("mcp_servers.lsp.utils.lsp_client")
+    mock_client.sessions = {"python": mocker.MagicMock()}
+    mock_client.send_request = mocker.AsyncMock(return_value=None)
+    mocker.patch("mcp_servers.lsp.utils._treesitter_workspace_symbols", return_value=[])
+
+    res = await lsp_workspace_symbols(WorkspaceSymbolsArgs(query="nope"), ctx)
+    assert "No workspace symbols found" in res
+
+
+@pytest.mark.asyncio
 async def test_lsp_workspace_symbols_outer_exception(mocker):
     ctx = mocker.MagicMock()
     mock_client = mocker.patch("mcp_servers.lsp.utils.lsp_client")

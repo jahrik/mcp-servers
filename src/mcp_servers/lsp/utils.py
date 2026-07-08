@@ -318,3 +318,99 @@ def _cap_and_spill(
         kept_lines.append(f"\n[Error: Failed to write full spill file: {e}]")
 
     return "\n".join(kept_lines)
+
+
+# Directories never worth walking for the tree-sitter symbol fallback.
+_FALLBACK_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        "dist",
+        "build",
+        "site-packages",
+    }
+)
+# Safety caps so an empty query against a huge tree cannot run unbounded.
+_FALLBACK_MAX_FILES = 4000
+_FALLBACK_MAX_RESULTS = 500
+# tree-sitter outline kinds -> LSP SymbolKind ints (Class=5, Function=12).
+_TS_KIND_TO_LSP_KIND = {"class": 5, "function": 12}
+
+
+def _treesitter_workspace_symbols(query: str, limit: int = _FALLBACK_MAX_RESULTS) -> list[dict]:
+    """Provider-agnostic fallback for ``workspace/symbol``.
+
+    Many language servers (e.g. Microsoft ``pyright``) return nothing for
+    ``workspace/symbol`` because they do not index the workspace. This walks the
+    workspace source tree, outlines each file with tree-sitter, and matches
+    top-level class/function declarations whose name contains ``query``
+    (case-insensitive), returning LSP ``SymbolInformation``-shaped dicts so the
+    normal formatting/filtering/spill path renders them unchanged.
+    """
+    needle = query.lower().strip()
+    if not needle:
+        return []
+
+    from mcp_servers.lsp import treesitter
+
+    results: list[dict] = []
+    seen: set[tuple[str, int, str]] = set()
+    files_scanned = 0
+    root = Path(WORKSPACE_ROOT).resolve()
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune noise dirs and hidden dirs in place so os.walk skips them.
+        dirnames[:] = [
+            d for d in dirnames if d not in _FALLBACK_SKIP_DIRS and not d.startswith(".")
+        ]
+        for filename in filenames:
+            ext = os.path.splitext(filename)[1]
+            if ext not in treesitter._EXTENSION_TO_LANGUAGE:
+                continue
+            if files_scanned >= _FALLBACK_MAX_FILES:
+                return results
+            files_scanned += 1
+            path = Path(dirpath) / filename
+            try:
+                tree, language = treesitter.parse_file(path)
+                symbols = treesitter.get_outline(tree, language)
+            except Exception:
+                # Unreadable file or a parse/query error: skip, keep scanning.
+                continue
+            try:
+                uri = path.resolve().as_uri()
+            except (OSError, ValueError):
+                uri = path.as_uri()
+            for sym in symbols:
+                name = sym.get("name", "")
+                if needle not in name.lower():
+                    continue
+                start_line = max(sym.get("start_line", 1) - 1, 0)
+                start_char = sym.get("start_char", 0)
+                key = (uri, start_line, name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(
+                    {
+                        "name": name,
+                        "kind": _TS_KIND_TO_LSP_KIND.get(sym.get("kind", ""), 13),
+                        "location": {
+                            "uri": uri,
+                            "range": {
+                                "start": {"line": start_line, "character": start_char},
+                                "end": {"line": start_line, "character": start_char},
+                            },
+                        },
+                    }
+                )
+                if len(results) >= limit:
+                    return results
+    return results

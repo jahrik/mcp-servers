@@ -10,18 +10,20 @@ from mcp_servers.lsp import utils
 from mcp_servers.lsp.models.schemas import (
     DocumentSymbolsArgs,
     PositionArgs,
+    WorkspaceSymbolsArgs,
 )
 from mcp_servers.lsp.tools import (
     lsp_definition,
     lsp_document_symbols,
     lsp_hover,
     lsp_references,
+    lsp_workspace_symbols,
 )
 
-pyright = shutil.which("pyright-langserver")
+ty = shutil.which("ty")
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(pyright is None, reason="pyright-langserver not installed"),
+    pytest.mark.skipif(ty is None, reason="ty language server not installed"),
 ]
 
 
@@ -37,7 +39,7 @@ async def lsp_client_lifespan(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pyright_integration(tmp_path):
+async def test_ty_integration(tmp_path):
     # Create a small python fixture
     code = """\
 class Calculator:
@@ -54,7 +56,7 @@ def run():
 
     ctx = Context()
 
-    # Wait a bit for Pyright to initialize and recognize the file structure
+    # Wait a bit for the language server to initialize and recognize the file structure
     await asyncio.sleep(2.0)
 
     # 1. Drive lsp_document_symbols
@@ -82,3 +84,10 @@ def run():
     refs_res = await lsp_references(args_refs, ctx)
     assert "calc.py:1:6" in refs_res
     assert "calc.py:7:11" in refs_res
+
+    # 5. Drive lsp_workspace_symbols. WORKSPACE_ROOT is monkeypatched to tmp_path,
+    # so this resolves either via the LSP or the tree-sitter fallback (for backends
+    # that don't index the workspace) — either way the fixture's symbols must appear.
+    args_ws = WorkspaceSymbolsArgs(query="Calculator")
+    ws_res = await lsp_workspace_symbols(args_ws, ctx)
+    assert "Calculator" in ws_res

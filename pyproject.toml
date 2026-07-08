@@ -71,7 +71,7 @@ required-imports = ["from __future__ import annotations"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "integration: end-to-end tests that drive a real language server (pyright); skipped when it is not installed",
+    "integration: end-to-end tests that drive a real language server (ty); skipped when it is not installed",
 ]
 
 [tool.ty.environment]
