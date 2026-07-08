@@ -62,6 +62,11 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "PT"]
 ignore = ["E501", "PT011"]
 
+[tool.ruff.lint.isort]
+# Enforce `from __future__ import annotations` everywhere (I002) so the
+# deferred-annotation convention can't silently drift back out.
+required-imports = ["from __future__ import annotations"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

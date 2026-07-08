@@ -373,7 +373,7 @@ wheels = [
 
 [[package]]
 name = "mcp-servers"
-version = "0.4.1.dev19+g7ba96645f.d20260708"
+version = "0.5.1.dev0+gce4d361a0.d20260708"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
