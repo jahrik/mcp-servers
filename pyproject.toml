@@ -55,6 +55,14 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_servers"]
 
+[tool.uv]
+# The version is derived from git (hatch-vcs). Without this, uv treats the
+# editable install as changed on every invocation and rebuilds/reinstalls it,
+# which is slow and — if a rebuild is interrupted — can leave a half-written
+# dist-info (missing RECORD) that poisons subsequent uv runs. Keying the build
+# cache on the git commit/tags rebuilds only when the version can actually change.
+cache-keys = [{ git = { commit = true, tags = true } }]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
