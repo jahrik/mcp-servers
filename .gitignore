@@ -18,3 +18,5 @@ pr.md
 .coverage
 DUCKDB.md
 DISPATCHER.md
+MEMORY.md
+RESULTS.md
