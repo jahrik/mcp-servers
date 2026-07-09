@@ -75,6 +75,12 @@ def _init_db() -> None:
         for col in ("created_at", "updated_at", "result", "claimed_by", "parent_id"):
             with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs (status, worker_type, created_at)"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_job_id ON messages (job_id)")
+
         conn.commit()
 
 
@@ -185,6 +191,11 @@ def update_job_status(args: UpdateJobStatusArgs) -> str:
     result_str = None
     if args.result is not None:
         result_str = json.dumps(args.result)
+        result_bytes = len(result_str.encode("utf-8"))
+        if result_bytes > MAX_PAYLOAD_BYTES:
+            raise ValueError(
+                f"Result is {result_bytes} bytes, exceeds the {MAX_PAYLOAD_BYTES}-byte limit"
+            )
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
         terminal = tuple(_TERMINAL_STATUSES)
@@ -292,6 +303,7 @@ def cleanup_jobs(args: CleanupJobsArgs) -> str:
         params.append(cutoff)
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.execute(query, tuple(params))
         conn.commit()
         deleted = cursor.rowcount

@@ -296,3 +296,33 @@ def test_send_and_get_messages(mock_db: Path) -> None:
     assert msgs[0]["recipient"] == "qa"
     assert msgs[0]["content"] == "Hello world"
     assert msgs[0]["job_id"] == job_id
+
+
+def test_cleanup_jobs_orphans_cascade(mock_db: Path) -> None:
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.send_message(
+        SendMessageArgs(job_id=job_id, sender="claude", recipient="qa", content="Hello world")
+    )
+
+    # Message exists
+    assert len(json.loads(jobs.get_messages(GetMessagesArgs(job_id=job_id)))) == 1
+
+    # Delete job
+    jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED))
+    jobs.cleanup_jobs(CleanupJobsArgs())
+
+    # Message should be cascade deleted
+    with sqlite3.connect(mock_db) as conn:
+        cursor = conn.execute("SELECT COUNT(*) FROM messages WHERE job_id = ?", (job_id,))
+        count = cursor.fetchone()[0]
+    assert count == 0
+
+
+def test_update_job_status_rejects_oversized_result(mock_db: Path) -> None:
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    oversized_result = {"blob": "x" * (jobs.MAX_PAYLOAD_BYTES + 1)}
+
+    with pytest.raises(ValueError, match="exceeds the"):
+        jobs.update_job_status(
+            UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED, result=oversized_result)
+        )
