@@ -24,6 +24,8 @@ mcp.tool()(tools.list_jobs)
 mcp.tool()(tools.cleanup_jobs)
 mcp.tool()(tools.send_message)
 mcp.tool()(tools.get_messages)
+mcp.tool()(tools.heartbeat_job)
+mcp.tool()(tools.requeue_stalled_jobs)
 
 
 def main() -> None:

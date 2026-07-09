@@ -12,8 +12,10 @@ from mcp_servers.dispatcher.models.schemas import (
     CleanupJobsArgs,
     GetJobStatusArgs,
     GetMessagesArgs,
+    HeartbeatJobArgs,
     JobStatus,
     ListJobsArgs,
+    RequeueStalledJobsArgs,
     SendMessageArgs,
     SubmitJobArgs,
     UpdateJobStatusArgs,
@@ -326,3 +328,39 @@ def test_update_job_status_rejects_oversized_result(mock_db: Path) -> None:
         jobs.update_job_status(
             UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED, result=oversized_result)
         )
+
+
+def test_heartbeat_job(mock_db: Path) -> None:
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+
+    with sqlite3.connect(mock_db) as conn:
+        conn.execute("UPDATE jobs SET updated_at = '2000-01-01T00:00:00Z' WHERE id = ?", (job_id,))
+        conn.commit()
+
+    jobs.heartbeat_job(HeartbeatJobArgs(job_id=job_id))
+
+    status = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=job_id)))
+    assert status["updated_at"] != "2000-01-01T00:00:00Z"
+
+
+def test_requeue_stalled_jobs(mock_db: Path) -> None:
+    j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.claim_job(ClaimJobArgs(worker_type="w", agent_id="agent-1"))
+
+    j2 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    jobs.claim_job(ClaimJobArgs(worker_type="w", agent_id="agent-2"))
+
+    with sqlite3.connect(mock_db) as conn:
+        conn.execute("UPDATE jobs SET updated_at = '2000-01-01T00:00:00Z' WHERE id = ?", (j1,))
+        conn.commit()
+
+    res = json.loads(jobs.requeue_stalled_jobs(RequeueStalledJobsArgs(timeout_minutes=60)))
+    assert res["requeued"] == 1
+
+    status1 = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=j1)))
+    assert status1["status"] == "Queued"
+    assert status1["claimed_by"] is None
+
+    status2 = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=j2)))
+    assert status2["status"] == "Running"
+    assert status2["claimed_by"] == "agent-2"

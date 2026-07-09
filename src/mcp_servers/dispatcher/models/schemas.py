@@ -17,6 +17,7 @@ class JobStatus(enum.StrEnum):
     CHANGES_REQUESTED = "ChangesRequested"
     COMPLETED = "Completed"
     FAILED = "Failed"
+    CANCELLED = "Cancelled"
 
 
 class SubmitJobArgs(BaseModel, frozen=True):
@@ -48,6 +49,22 @@ class ClaimJobArgs(BaseModel, frozen=True):
         ...,
         max_length=256,
         description="ID of the specific standing agent process claiming the job.",
+    )
+
+
+class HeartbeatJobArgs(BaseModel, frozen=True):
+    job_id: str = Field(
+        ...,
+        pattern=_UUID_PATTERN,
+        description="The ID of the job to heartbeat.",
+    )
+
+
+class RequeueStalledJobsArgs(BaseModel, frozen=True):
+    timeout_minutes: int = Field(
+        ...,
+        gt=0,
+        description="Jobs with an updated_at older than this many minutes will be requeued.",
     )
 
 
