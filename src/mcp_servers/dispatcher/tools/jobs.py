@@ -13,8 +13,10 @@ from ..models.schemas import (
     CleanupJobsArgs,
     GetJobStatusArgs,
     GetMessagesArgs,
+    HeartbeatJobArgs,
     JobStatus,
     ListJobsArgs,
+    RequeueStalledJobsArgs,
     SendMessageArgs,
     SubmitJobArgs,
     UpdateJobStatusArgs,
@@ -24,7 +26,9 @@ from ..models.schemas import (
 # Job payloads are task specs, not bulk data; 1 MiB is generous headroom.
 MAX_PAYLOAD_BYTES = 1024 * 1024
 
-_TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED.value, JobStatus.FAILED.value})
+_TERMINAL_STATUSES = frozenset(
+    {JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value}
+)
 
 
 def get_db_path() -> Path:
@@ -172,6 +176,46 @@ def _fetch_job(db_path: Path, job_id: str) -> dict[str, object] | None:
             job_data["result"] = json.loads(str(job_data["result"]))
 
     return job_data
+
+
+def heartbeat_job(args: HeartbeatJobArgs) -> str:
+    """Update the updated_at timestamp for a running job."""
+    _init_db()
+    db_path = get_db_path()
+
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        cursor = conn.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id = ?",
+            (_now(), args.job_id),
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return json.dumps({"error": f"Job {args.job_id} not found."})
+
+    job_data = _fetch_job(db_path, args.job_id)
+    return json.dumps(job_data)
+
+
+def requeue_stalled_jobs(args: RequeueStalledJobsArgs) -> str:
+    """Sets status to QUEUED and clears claimed_by for jobs where updated_at is older than the timeout."""
+    _init_db()
+    db_path = get_db_path()
+
+    cutoff = (datetime.now(UTC) - timedelta(minutes=args.timeout_minutes)).isoformat()
+
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        terminal = tuple(_TERMINAL_STATUSES)
+        placeholders = ", ".join("?" for _ in terminal)
+
+        cursor = conn.execute(
+            f"UPDATE jobs SET status = ?, claimed_by = NULL, updated_at = ? "  # noqa: S608
+            f"WHERE status NOT IN ({placeholders}) AND updated_at < ?",
+            (JobStatus.QUEUED.value, _now(), *terminal, cutoff),
+        )
+        conn.commit()
+        requeued = cursor.rowcount
+
+    return json.dumps({"requeued": requeued})
 
 
 def get_job_status(args: GetJobStatusArgs) -> str:

@@ -5,7 +5,9 @@ from .jobs import (
     cleanup_jobs,
     get_job_status,
     get_messages,
+    heartbeat_job,
     list_jobs,
+    requeue_stalled_jobs,
     send_message,
     submit_job,
     update_job_status,
@@ -20,4 +22,6 @@ __all__ = [
     "claim_job",
     "send_message",
     "get_messages",
+    "heartbeat_job",
+    "requeue_stalled_jobs",
 ]
