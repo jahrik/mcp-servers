@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 
 import pytest
 
@@ -10,7 +9,6 @@ from mcp_servers.memory.models.schemas import (
     ListMemoriesArgs,
     RecallArgs,
     RememberArgs,
-    SyncExistingDataArgs,
 )
 from mcp_servers.memory.server import main, mcp
 from mcp_servers.memory.tools import db
@@ -18,7 +16,6 @@ from mcp_servers.memory.tools.forget import forget
 from mcp_servers.memory.tools.list_memories import list_memories
 from mcp_servers.memory.tools.recall import recall
 from mcp_servers.memory.tools.remember import remember
-from mcp_servers.memory.tools.sync import sync_existing_data
 
 
 @pytest.fixture(autouse=True)
@@ -167,119 +164,6 @@ async def test_recall():
     mismatched_recall = RecallArgs(query="Testing", tags=["unrelated"])
     mismatched_res = json.loads(await recall(mismatched_recall))
     assert len(mismatched_res["results"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_sync_existing_data(tmp_path):
-    """Test importing artifacts, SQLite summaries, and Claude logs."""
-    # 1. Setup mock brain artifacts directory
-    brain_dir = tmp_path / "brain"
-    conv_dir = brain_dir / "conv-123"
-    conv_dir.mkdir(parents=True)
-    with open(conv_dir / "plan.md", "w") as f:
-        f.write("# Deployment Plan\nUse Ansible roles to configure Docker Swarm.")
-
-    # A system generated file (should be skipped)
-    sys_dir = conv_dir / ".system_generated"
-    sys_dir.mkdir()
-    with open(sys_dir / "system_log.md", "w") as f:
-        f.write("System message.")
-
-    # 2. Setup mock conversation summaries database
-    summaries_db_path = str(tmp_path / "summaries.db")
-    lite_conn = sqlite3.connect(summaries_db_path)
-    lite_conn.execute(
-        """
-        CREATE TABLE conversation_summaries (
-            conversation_id TEXT PRIMARY KEY,
-            title TEXT,
-            preview TEXT,
-            step_count INTEGER,
-            last_modified_time TEXT,
-            workspace_uris TEXT
-        )
-        """
-    )
-    lite_conn.execute(
-        "INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            "conv-summary-456",
-            "Refactor tests",
-            "This conversation refactored workspace tests.",
-            42,
-            "2026-07-08T12:00:00",
-            '["file:///home/deck/github/mcp-servers"]',
-        ),
-    )
-    lite_conn.commit()
-    lite_conn.close()
-
-    # 3. Setup Claude projects session logs
-    claude_dir = tmp_path / "claude"
-    project_dir = claude_dir / "mcp-project"
-    project_dir.mkdir(parents=True)
-
-    jsonl_lines = [
-        {"type": "ai-title", "aiTitle": "Sync project features"},
-        {
-            "type": "user",
-            "message": {"role": "user", "content": "How do we write new MCP tools?"},
-            "timestamp": "2026-07-08T13:00:00.000Z",
-            "cwd": "/home/deck/github",
-        },
-        {
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "Use the FastMCP python library."}],
-            },
-        },
-    ]
-    with open(project_dir / "session-789.jsonl", "w") as f:
-        for line in jsonl_lines:
-            f.write(json.dumps(line) + "\n")
-
-    # Call dry run first
-    sync_args = SyncExistingDataArgs(
-        dry_run=True,
-        brain_dir=str(brain_dir),
-        summaries_db=summaries_db_path,
-        claude_dir=str(claude_dir),
-    )
-    dry_res = json.loads(await sync_existing_data(sync_args))
-    assert dry_res["dry_run"] is True
-    assert dry_res["stats"]["brain_artifacts"] == 1
-    assert dry_res["stats"]["conversation_summaries"] == 1
-    assert dry_res["stats"]["claude_sessions"] == 1
-    assert len(dry_res["preview"]) == 3
-
-    # Call real sync
-    real_sync_args = SyncExistingDataArgs(
-        dry_run=False,
-        brain_dir=str(brain_dir),
-        summaries_db=summaries_db_path,
-        claude_dir=str(claude_dir),
-    )
-    real_res = json.loads(await sync_existing_data(real_sync_args))
-    assert real_res["dry_run"] is False
-    assert real_res["imported"] == 3
-
-    # Verify DB contents
-    list_res = json.loads(await list_memories(ListMemoriesArgs(limit=10)))
-    memories = list_res["memories"]
-    assert len(memories) == 3
-
-    keys = {m["key"] for m in memories}
-    assert "brain/conv-123/plan.md" in keys
-    assert "summary/conv-summary-456" in keys
-    # Claude session keys include the project subdir to avoid cross-project collisions.
-    assert "claude/mcp-project/session-789" in keys
-
-    # Verify content formatting
-    claude_mem = next(m for m in memories if m["key"] == "claude/mcp-project/session-789")
-    assert "Sync project features" in claude_mem["content"]
-    assert "How do we write new MCP tools?" in claude_mem["content"]
-    assert "Use the FastMCP python library." in claude_mem["content"]
 
 
 @pytest.mark.asyncio

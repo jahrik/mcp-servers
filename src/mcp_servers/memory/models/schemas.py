@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-import os
-
-from pydantic import BaseModel, Field, field_validator
-
-
-def normalize_path(v: str | None) -> str | None:
-    if v is None:
-        return None
-    return os.path.abspath(os.path.expanduser(v))
+from pydantic import BaseModel, Field
 
 
 class RememberArgs(BaseModel, frozen=True):
@@ -78,27 +70,3 @@ class ListMemoriesArgs(BaseModel, frozen=True):
         ge=0,
         description="Number of memories to skip for pagination (defaults to 0).",
     )
-
-
-class SyncExistingDataArgs(BaseModel, frozen=True):
-    dry_run: bool = Field(
-        False,
-        description="If True, scan and preview the import without writing any data to the database.",
-    )
-    brain_dir: str | None = Field(
-        None,
-        description="Optional custom path to the Antigravity brain directory (defaults to ~/.gemini/antigravity-cli/brain).",
-    )
-    summaries_db: str | None = Field(
-        None,
-        description="Optional custom path to the Antigravity conversation summaries database file (defaults to ~/.gemini/antigravity-cli/conversation_summaries.db).",
-    )
-    claude_dir: str | None = Field(
-        None,
-        description="Optional custom path to the Claude projects directory (defaults to ~/.claude/projects).",
-    )
-
-    @field_validator("brain_dir", "summaries_db", "claude_dir")
-    @classmethod
-    def validate_paths(cls, v: str | None) -> str | None:
-        return normalize_path(v)

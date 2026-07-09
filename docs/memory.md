@@ -12,7 +12,7 @@ Installed as `mcp-memory`; registered as `memory`.
 - **Search** — `recall` ranks memories by relevance using a local BM25 full-text index (DuckDB `fts`), falling back to keyword + token-overlap scoring when the index is unavailable. Fully offline; no API keys, no network calls. See [Search modes](#search-modes).
 - **Concurrency** — every tool call opens a connection, runs, and closes it. Schema initialization runs once at server startup and is serialized per database path, and the connection helper retries transient lock, catalog-conflict, and constraint errors with jittered exponential backoff.
 - **Context safety** — `recall` and `list_memories` cap each memory's returned `content` (see `MCP_MEMORY_MAX_CONTENT_CHARS`) so a single large memory cannot flood the agent's context window.
-- **Backfill** — `sync_existing_data` imports historical context (Antigravity brain artifacts, conversation summaries, and Claude session logs) into the store.
+- **Shared across agents** — the store is a single DuckDB file at `~/.mcp/memory.db`, so any agent running this server (e.g. Claude and Antigravity) reads and writes the same memories.
 
 ## Tools
 
@@ -51,21 +51,12 @@ List stored memories, most recently updated first. Content is capped identically
 - `limit` (integer, optional): Maximum results (default `50`, max `1000`).
 - `offset` (integer, optional): Number of memories to skip, for pagination.
 
-### `sync_existing_data`
-Scan and import historical context into the memory database.
-
-**Arguments**:
-- `dry_run` (boolean, optional): Preview the import without writing. Defaults to `false`.
-- `brain_dir` (string, optional): Antigravity brain directory (default `~/.gemini/antigravity-cli/brain`).
-- `summaries_db` (string, optional): Antigravity conversation-summaries SQLite database (default `~/.gemini/antigravity-cli/conversation_summaries.db`).
-- `claude_dir` (string, optional): Claude projects directory (default `~/.claude/projects`).
-
 ## Search modes
 
 Search is **fully local** — no embedding provider, API key, or per-query network call. Memory
 content never leaves the machine.
 
-- **BM25 full-text (default).** DuckDB's `fts` extension indexes memory `content` and `key`; `recall` ranks results by BM25 relevance. The index is a snapshot, so it is rebuilt after every write (`remember`, `forget`, `sync_existing_data`) to stay current.
+- **BM25 full-text (default).** DuckDB's `fts` extension indexes memory `content` and `key`; `recall` ranks results by BM25 relevance. The index is a snapshot, so it is rebuilt after every write (`remember`, `forget`) to stay current.
 - **Lexical fallback.** If the `fts` extension cannot be loaded — e.g. the very first use on a machine that is offline before DuckDB has cached the extension — `recall` transparently falls back to substring + token-overlap scoring. Results are still returned; only the ranking quality differs.
 
 Because scoring is lexical/keyword-based (not embeddings), `recall` matches shared terms rather
