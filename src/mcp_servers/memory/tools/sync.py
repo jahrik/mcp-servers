@@ -10,9 +10,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from ..client import get_embedding
 from ..models.schemas import SyncExistingDataArgs
-from .db import get_db_conn
+from .db import get_db_conn, rebuild_fts_index
 
 logger = logging.getLogger("mcp-memory.sync")
 
@@ -114,6 +113,10 @@ def parse_claude_sessions(claude_dir: str) -> list[dict[str, Any]]:
     for filepath in glob.glob(pattern, recursive=True):
         try:
             session_id = os.path.splitext(os.path.basename(filepath))[0]
+            # The path relative to the projects root (minus extension) keys the memory,
+            # so identically-named session files in different projects don't collide on
+            # the UNIQUE key and silently overwrite each other.
+            rel_key = os.path.splitext(os.path.relpath(filepath, claude_dir))[0]
             title = ""
             cwd = ""
             turns: list[dict[str, str]] = []
@@ -199,7 +202,7 @@ def parse_claude_sessions(claude_dir: str) -> list[dict[str, Any]]:
                 markdown_lines.append(f"- **{role}:**\n{text_indented}")
 
             content = "\n".join(markdown_lines).strip()
-            key = f"claude/{session_id}"
+            key = f"claude/{rel_key}"
 
             memories.append(
                 {
@@ -251,10 +254,9 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
             }
         )
 
-    # Resolve embeddings and format tags outside the DB write lock context to avoid lock contention
+    # Format tags outside the DB write lock context to keep the write section short.
     prepared_memories = []
     for m in all_memories:
-        embedding_val = get_embedding(m["content"])
         tags_str = json.dumps(m["tags"])
         prepared_memories.append(
             {
@@ -262,7 +264,6 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                 "content": m["content"],
                 "category": m["category"],
                 "tags_str": tags_str,
-                "embedding": embedding_val,
             }
         )
 
@@ -271,51 +272,42 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
     imported_count = 0
 
     with get_db_conn(read_only=False) as conn:
-        for pm in prepared_memories:
-            try:
-                # Check if exists
-                cursor = conn.execute("SELECT id FROM memories WHERE key = ?", [pm["key"]])
-                row = cursor.fetchone()
-
-                if row:
-                    # Update
-                    conn.execute(
-                        """
-                        UPDATE memories
-                        SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        [
-                            pm["content"],
-                            pm["category"],
-                            pm["tags_str"],
-                            pm["embedding"],
-                            now,
-                            row[0],
-                        ],
-                    )
-                else:
-                    # Insert
-                    mem_id = uuid_from_key(str(pm["key"]))
-                    conn.execute(
-                        """
-                        INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        [
-                            mem_id,
-                            pm["key"],
-                            pm["content"],
-                            pm["category"],
-                            pm["tags_str"],
-                            pm["embedding"],
-                            now,
-                            now,
-                        ],
-                    )
+        # One transaction for the whole batch: DuckDB otherwise commits to disk per
+        # statement, which is very slow for large imports and can leave a partially
+        # written database if interrupted. Each record is an atomic upsert keyed on
+        # the UNIQUE key column.
+        conn.execute("BEGIN TRANSACTION;")
+        try:
+            for pm in prepared_memories:
+                conn.execute(
+                    """
+                    INSERT INTO memories (id, key, content, category, tags, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (key) DO UPDATE SET
+                        content = excluded.content,
+                        category = excluded.category,
+                        tags = excluded.tags,
+                        updated_at = excluded.updated_at
+                    """,
+                    [
+                        uuid_from_key(str(pm["key"])),
+                        pm["key"],
+                        pm["content"],
+                        pm["category"],
+                        pm["tags_str"],
+                        now,
+                        now,
+                    ],
+                )
                 imported_count += 1
-            except Exception as e:
-                logger.error("Failed to import memory key %s: %s", pm["key"], e)
+            conn.execute("COMMIT;")
+        except Exception:
+            conn.execute("ROLLBACK;")
+            logger.exception("Sync import failed; rolled back the batch.")
+            raise
+
+        # Refresh the full-text index once after the batch import.
+        rebuild_fts_index(conn)
 
     return json.dumps(
         {

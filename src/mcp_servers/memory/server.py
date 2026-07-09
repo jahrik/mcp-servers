@@ -30,6 +30,15 @@ def main() -> None:
     level_name = os.getenv("MCP_LOG_LEVEL", "WARNING").upper()
     level = logging.getLevelNamesMapping().get(level_name, logging.WARNING)
     logging.basicConfig(stream=sys.stderr, level=level)
+
+    # Initialize the database schema once, sequentially, before serving requests.
+    # This avoids catalog write-write conflicts from concurrent lazy init on a
+    # cold-start database.
+    from .tools.db import get_db_conn
+
+    with get_db_conn(read_only=False):
+        pass
+
     mcp.run()
 
 

@@ -5,9 +5,8 @@ import json
 import uuid
 from datetime import datetime
 
-from ..client import get_embedding
 from ..models.schemas import RememberArgs
-from .db import get_db_conn
+from .db import get_db_conn, rebuild_fts_index
 
 
 def _execute_remember(args: RememberArgs) -> str:
@@ -15,71 +14,53 @@ def _execute_remember(args: RememberArgs) -> str:
     mem_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
 
-    # Get embedding vector (optional)
-    embedding_val = get_embedding(args.content)
-
     tags_str = json.dumps(args.tags) if args.tags is not None else None
 
     with get_db_conn(read_only=False) as conn:
-        existing_id = None
         if args.key:
-            # Check if key already exists
-            cursor = conn.execute("SELECT id FROM memories WHERE key = ?", [args.key])
-            row = cursor.fetchone()
-            if row:
-                existing_id = row[0]
-
-        if existing_id:
-            # Update the existing memory
-            conn.execute(
+            # Atomic upsert keyed on the UNIQUE key column: no check-then-insert race,
+            # so concurrent writes to the same key can't both INSERT. The RETURNING
+            # clause reports whether the row was newly created (created_at == updated_at
+            # only on a fresh insert; an update bumps updated_at but keeps created_at).
+            row = conn.execute(
                 """
-                UPDATE memories
-                SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
-                WHERE id = ?
+                INSERT INTO memories (id, key, content, category, tags, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET
+                    content = excluded.content,
+                    category = excluded.category,
+                    tags = excluded.tags,
+                    updated_at = excluded.updated_at
+                RETURNING id, (created_at = updated_at) AS created
                 """,
-                [
-                    args.content,
-                    args.category,
-                    tags_str,
-                    embedding_val,
-                    now,
-                    existing_id,
-                ],
-            )
-            return json.dumps(
-                {
-                    "status": "success",
-                    "action": "updated",
-                    "id": existing_id,
-                    "key": args.key,
-                }
-            )
+                [mem_id, args.key, args.content, args.category, tags_str, now, now],
+            ).fetchone()
+            # INSERT ... RETURNING always yields the affected row.
+            assert row is not None
+            result_id = row[0]
+            action = "created" if row[1] else "updated"
         else:
-            # Insert a new memory
+            # Keyless memories never collide, so a plain insert is sufficient.
             conn.execute(
                 """
-                INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO memories (id, key, content, category, tags, created_at, updated_at)
+                VALUES (?, NULL, ?, ?, ?, ?, ?)
                 """,
-                [
-                    mem_id,
-                    args.key,
-                    args.content,
-                    args.category,
-                    tags_str,
-                    embedding_val,
-                    now,
-                    now,
-                ],
+                [mem_id, args.content, args.category, tags_str, now, now],
             )
-            return json.dumps(
-                {
-                    "status": "success",
-                    "action": "created",
-                    "id": mem_id,
-                    "key": args.key,
-                }
-            )
+            result_id, action = mem_id, "created"
+
+        # Refresh the full-text index so the new/updated content is searchable.
+        rebuild_fts_index(conn)
+
+    return json.dumps(
+        {
+            "status": "success",
+            "action": action,
+            "id": result_id,
+            "key": args.key,
+        }
+    )
 
 
 async def remember(args: RememberArgs) -> str:

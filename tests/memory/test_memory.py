@@ -29,19 +29,6 @@ def use_test_db(tmp_path, monkeypatch):
     return test_db_path
 
 
-@pytest.fixture
-def mock_embedding(mocker):
-    """Mock network calls for embeddings hermetically."""
-
-    def _mock_get_embedding(text):
-        if "vector" in text or "semantic" in text or "query" in text:
-            # Return a simple 3-dimensional float array
-            return [1.0, 0.0, 0.0]
-        return None
-
-    return mocker.patch("mcp_servers.memory.client.get_embedding", side_effect=_mock_get_embedding)
-
-
 def test_server_main(monkeypatch):
     """Verify that main runs and triggers the server start."""
     called = False
@@ -56,7 +43,7 @@ def test_server_main(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_remember_and_list(mock_embedding):
+async def test_remember_and_list():
     """Test storing memories and listing them."""
     # Storing a new memory
     args = RememberArgs(
@@ -135,8 +122,8 @@ async def test_forget():
 
 
 @pytest.mark.asyncio
-async def test_recall(mock_embedding):
-    """Test memory retrieval with text search and vector similarity fallback."""
+async def test_recall():
+    """Test memory retrieval via local BM25 full-text ranking."""
     # Insert facts
     await remember(
         RememberArgs(content="Python was created by Guido van Rossum.", key="py_creator")
@@ -148,21 +135,22 @@ async def test_recall(mock_embedding):
         RememberArgs(content="Ansible is a configuration management tool.", key="ansible_info")
     )
 
-    # Test Exact/Token overlap search
+    # Full-text search ranks the best lexical match first.
     recall_args = RecallArgs(query="Python Guido")
     res_str = await recall(recall_args)
     res = json.loads(res_str)
     assert len(res["results"]) > 0
     assert res["results"][0]["key"] == "py_creator"
 
-    # Test Vector similarity search (which should trigger our mocked embedding helper)
-    vector_recall_args = RecallArgs(query="semantic vector", limit=2)
-    vector_res_str = await recall(vector_recall_args)
-    vector_res = json.loads(vector_res_str)
-    assert len(vector_res["results"]) > 0
-    # Because we mocked embedding of "semantic" to return [1,0,0], and remember text contained "vector",
-    # the vector search should match "vector_info" (which was stored with "vector" in content and thus got embedding [1,0,0]).
-    assert vector_res["results"][0]["key"] == "vector_info"
+    # A multi-word query surfaces the memory sharing those terms.
+    semantic_args = RecallArgs(query="semantic vector", limit=2)
+    semantic_res = json.loads(await recall(semantic_args))
+    assert len(semantic_res["results"]) > 0
+    assert semantic_res["results"][0]["key"] == "vector_info"
+
+    # A query with no shared terms returns nothing.
+    no_match = json.loads(await recall(RecallArgs(query="kubernetes helm chart")))
+    assert no_match["results"] == []
 
     # Test tag/category filters
     await remember(
@@ -182,7 +170,7 @@ async def test_recall(mock_embedding):
 
 
 @pytest.mark.asyncio
-async def test_sync_existing_data(tmp_path, mock_embedding):
+async def test_sync_existing_data(tmp_path):
     """Test importing artifacts, SQLite summaries, and Claude logs."""
     # 1. Setup mock brain artifacts directory
     brain_dir = tmp_path / "brain"
@@ -284,24 +272,14 @@ async def test_sync_existing_data(tmp_path, mock_embedding):
     keys = {m["key"] for m in memories}
     assert "brain/conv-123/plan.md" in keys
     assert "summary/conv-summary-456" in keys
-    assert "claude/session-789" in keys
+    # Claude session keys include the project subdir to avoid cross-project collisions.
+    assert "claude/mcp-project/session-789" in keys
 
     # Verify content formatting
-    claude_mem = next(m for m in memories if m["key"] == "claude/session-789")
+    claude_mem = next(m for m in memories if m["key"] == "claude/mcp-project/session-789")
     assert "Sync project features" in claude_mem["content"]
     assert "How do we write new MCP tools?" in claude_mem["content"]
     assert "Use the FastMCP python library." in claude_mem["content"]
-
-
-def test_cosine_similarity_edge_cases():
-    """Test recall.py cosine similarity error/edge cases."""
-    from mcp_servers.memory.tools.recall import cosine_similarity
-
-    assert cosine_similarity(None, None) == 0.0
-    assert cosine_similarity([1.0], None) == 0.0
-    assert cosine_similarity([1.0], [1.0, 2.0]) == 0.0
-    assert cosine_similarity([0.0, 0.0], [1.0, 1.0]) == 0.0
-    assert cosine_similarity([1.0, 1.0], [0.0, 0.0]) == 0.0
 
 
 @pytest.mark.asyncio
@@ -316,6 +294,142 @@ async def test_forget_by_id():
     res = json.loads(await forget(ForgetArgs(id=mem_id)))
     assert res["status"] == "success"
     assert res["deleted"] is True
+
+
+def test_get_max_content_chars(monkeypatch):
+    """The content cap reads env, rejects junk, and treats non-positive as disabled."""
+    from mcp_servers.memory.tools.db import DEFAULT_MAX_CONTENT_CHARS, get_max_content_chars
+
+    monkeypatch.delenv("MCP_MEMORY_MAX_CONTENT_CHARS", raising=False)
+    assert get_max_content_chars() == DEFAULT_MAX_CONTENT_CHARS
+
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "notanint")
+    assert get_max_content_chars() == DEFAULT_MAX_CONTENT_CHARS
+
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "-5")
+    assert get_max_content_chars() == 0
+
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "123")
+    assert get_max_content_chars() == 123
+
+
+@pytest.mark.asyncio
+async def test_recall_truncates_large_content(monkeypatch):
+    """recall caps returned content and reports the true length."""
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "50")
+    big = "x" * 500 + " keyword"
+    await remember(RememberArgs(content=big, key="big"))
+
+    res = json.loads(await recall(RecallArgs(query="keyword")))
+    item = res["results"][0]
+    assert len(item["content"]) == 50
+    assert item["content_truncated"] is True
+    assert item["content_length"] == len(big)
+
+
+@pytest.mark.asyncio
+async def test_list_memories_truncates_large_content(monkeypatch):
+    """list_memories caps returned content identically to recall."""
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "10")
+    await remember(RememberArgs(content="A" * 100, key="big"))
+
+    res = json.loads(await list_memories(ListMemoriesArgs()))
+    mem = res["memories"][0]
+    assert len(mem["content"]) == 10
+    assert mem["content_truncated"] is True
+    assert mem["content_length"] == 100
+
+
+@pytest.mark.asyncio
+async def test_truncation_disabled(monkeypatch):
+    """Setting the cap to 0 returns full content with no truncation markers."""
+    monkeypatch.setenv("MCP_MEMORY_MAX_CONTENT_CHARS", "0")
+    content = "B" * 5000
+    await remember(RememberArgs(content=content, key="big"))
+
+    res = json.loads(await list_memories(ListMemoriesArgs()))
+    mem = res["memories"][0]
+    assert mem["content"] == content
+    assert "content_truncated" not in mem
+
+
+def test_ensure_initialized_runs_once(monkeypatch):
+    """Schema init runs a single time per database path across connections."""
+    from mcp_servers.memory.tools import db
+
+    calls = 0
+    orig_init = db.init_db
+
+    def counting_init(conn):
+        nonlocal calls
+        calls += 1
+        orig_init(conn)
+
+    monkeypatch.setattr(db, "init_db", counting_init)
+    db._initialized_paths.discard(db.DB_PATH)
+
+    with db.get_db_conn(read_only=False):
+        pass
+    with db.get_db_conn(read_only=False):
+        pass
+
+    assert calls == 1
+
+
+def test_db_connection_conflict_retry(monkeypatch):
+    """Connection-open conflict/constraint errors (e.g. cold-start catalog races) retry."""
+    import duckdb
+
+    from mcp_servers.memory.tools.db import get_db_conn
+
+    attempts = 0
+    orig_connect = duckdb.connect
+
+    def mock_connect(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 2:
+            raise duckdb.IOException("Catalog write-write conflict on create")
+        return orig_connect(*args, **kwargs)
+
+    monkeypatch.setattr(duckdb, "connect", mock_connect)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    with get_db_conn() as conn:
+        assert conn is not None
+    assert attempts == 2
+
+
+def test_db_caller_exception_propagates_cleanly():
+    """An exception raised inside the `with` body propagates as-is.
+
+    Regression test: the retry loop must not try to re-yield after an exception is
+    thrown into the generator (which would raise `RuntimeError: generator didn't stop
+    after throw()` and mask the real error). Even an error whose message matches the
+    connection-retry substrings must surface unchanged from the caller's body.
+    """
+    import duckdb
+
+    from mcp_servers.memory.tools.db import get_db_conn
+
+    with (
+        pytest.raises(duckdb.ConstraintException, match="unique constraint"),
+        get_db_conn(read_only=False),
+    ):
+        raise duckdb.ConstraintException("Duplicate key violates unique constraint")
+
+
+@pytest.mark.asyncio
+async def test_remember_same_key_is_atomic_upsert():
+    """Re-remembering a key updates in place via upsert — one row, no duplicate-key error."""
+    await remember(RememberArgs(content="first", key="dup"))
+    res = json.loads(await remember(RememberArgs(content="second", key="dup")))
+    assert res["action"] == "updated"
+
+    listed = json.loads(await list_memories(ListMemoriesArgs()))
+    rows = [m for m in listed["memories"] if m["key"] == "dup"]
+    assert len(rows) == 1
+    assert rows[0]["content"] == "second"
 
 
 def test_db_lock_handling(monkeypatch):
@@ -342,37 +456,26 @@ def test_db_lock_handling(monkeypatch):
     assert attempts == 3
 
 
-def test_client_embeddings(monkeypatch, httpx_mock):
-    """Test the raw API requests for Gemini and OpenAI embeddings."""
-    from mcp_servers.memory.client import get_embedding
+@pytest.mark.asyncio
+async def test_recall_falls_back_without_fts(monkeypatch):
+    """When the FTS index is unavailable, recall uses lexical token-overlap scoring."""
+    import sys
 
-    monkeypatch.setenv("GEMINI_API_KEY", "mock_gemini_key")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    await remember(RememberArgs(content="Python was created by Guido van Rossum.", key="py"))
+    await remember(RememberArgs(content="Ansible manages configuration.", key="ans"))
 
-    # Mock Gemini embedding response
-    httpx_mock.add_response(
-        url="https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=mock_gemini_key",
-        json={"embedding": {"values": [0.1, 0.2, 0.3]}},
-    )
+    # Force the FTS path to report "unavailable" so the lexical fallback runs.
+    # tools/__init__ shadows the submodule attribute, so reach it via sys.modules.
+    recall_mod = sys.modules["mcp_servers.memory.tools.recall"]
+    monkeypatch.setattr(recall_mod, "_fts_ranked_rows", lambda conn, args: None)
 
-    res = get_embedding("hello gemini")
-    assert res == [0.1, 0.2, 0.3]
-
-    # Test OpenAI embedding fallback
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "mock_openai_key")
-
-    httpx_mock.add_response(
-        url="https://api.openai.com/v1/embeddings",
-        json={"data": [{"embedding": [0.4, 0.5]}]},
-    )
-
-    res = get_embedding("hello openai")
-    assert res == [0.4, 0.5]
+    res = json.loads(await recall(RecallArgs(query="Python Guido")))
+    assert len(res["results"]) > 0
+    assert res["results"][0]["key"] == "py"
 
 
 @pytest.mark.asyncio
-async def test_list_memories_pagination(mock_embedding):
+async def test_list_memories_pagination():
     """Test pagination offset and limit functionality in list_memories."""
     # Insert multiple facts
     for i in range(5):
