@@ -9,13 +9,12 @@ _UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 
 class JobStatus(enum.StrEnum):
-    """Lifecycle states a dispatcher job can be in.
+    """Lifecycle states a dispatcher job can be in."""
 
-    ``submit_job`` starts a job as ``Running``; a spawn failure marks it ``Failed``.
-    The background worker reports ``Completed`` (or ``Failed``) via ``update_job_status``.
-    """
-
+    QUEUED = "Queued"
     RUNNING = "Running"
+    IN_REVIEW = "InReview"
+    CHANGES_REQUESTED = "ChangesRequested"
     COMPLETED = "Completed"
     FAILED = "Failed"
 
@@ -30,6 +29,25 @@ class SubmitJobArgs(BaseModel, frozen=True):
     payload: dict[str, Any] = Field(
         ...,
         description="JSON payload for the job.",
+    )
+    parent_id: str | None = Field(
+        None,
+        pattern=_UUID_PATTERN,
+        description="Optional ID of parent task to link subtasks.",
+    )
+
+
+class ClaimJobArgs(BaseModel, frozen=True):
+    worker_type: str = Field(
+        ...,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        max_length=256,
+        description="The type of worker looking for a job.",
+    )
+    agent_id: str = Field(
+        ...,
+        max_length=256,
+        description="ID of the specific standing agent process claiming the job.",
     )
 
 
@@ -49,7 +67,45 @@ class UpdateJobStatusArgs(BaseModel, frozen=True):
     )
     status: JobStatus = Field(
         ...,
-        description="New status: one of Running, Completed, or Failed.",
+        description="New status for the job.",
+    )
+    result: dict[str, Any] | None = Field(
+        None,
+        description="Optional JSON-serializable task outputs/feedback.",
+    )
+
+
+class SendMessageArgs(BaseModel, frozen=True):
+    job_id: str = Field(
+        ...,
+        pattern=_UUID_PATTERN,
+        description="The ID of the job this message is associated with.",
+    )
+    sender: str = Field(
+        ...,
+        max_length=256,
+        description="The agent sending the message (e.g. 'architect', 'devlead', 'qa').",
+    )
+    recipient: str = Field(
+        ...,
+        max_length=256,
+        description="The target agent or 'all'.",
+    )
+    content: str = Field(
+        ...,
+        description="The markdown content of the message.",
+    )
+
+
+class GetMessagesArgs(BaseModel, frozen=True):
+    job_id: str = Field(
+        ...,
+        pattern=_UUID_PATTERN,
+        description="The ID of the job to retrieve messages for.",
+    )
+    since: str | None = Field(
+        None,
+        description="Optional ISO-8601 timestamp. Only messages created after this will be returned.",
     )
 
 

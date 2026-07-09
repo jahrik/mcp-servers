@@ -4,16 +4,18 @@ import contextlib
 import json
 import os
 import sqlite3
-import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..models.schemas import (
+    ClaimJobArgs,
     CleanupJobsArgs,
     GetJobStatusArgs,
+    GetMessagesArgs,
     JobStatus,
     ListJobsArgs,
+    SendMessageArgs,
     SubmitJobArgs,
     UpdateJobStatusArgs,
 )
@@ -23,35 +25,6 @@ from ..models.schemas import (
 MAX_PAYLOAD_BYTES = 1024 * 1024
 
 _TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED.value, JobStatus.FAILED.value})
-
-# Default ceiling on concurrently-``Running`` jobs. Each Running job holds a
-# spawned worker, so this bounds fan-out (a single loop of submits can't launch
-# unbounded agents). Override with MCP_DISPATCHER_MAX_RUNNING.
-_DEFAULT_MAX_RUNNING = 16
-
-
-def _reap_children() -> None:
-    """Reap any finished children so they don't accumulate as zombies."""
-    try:
-        while True:
-            # -1 means any child process. WNOHANG returns immediately if none have exited.
-            pid, _ = os.waitpid(-1, os.WNOHANG)
-            if pid == 0:
-                break
-    except ChildProcessError:
-        # Raised if there are no children at all.
-        pass
-
-
-def _max_running() -> int:
-    raw = os.environ.get("MCP_DISPATCHER_MAX_RUNNING")
-    if raw is None:
-        return _DEFAULT_MAX_RUNNING
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_MAX_RUNNING
-    return value if value > 0 else _DEFAULT_MAX_RUNNING
 
 
 def get_db_path() -> Path:
@@ -77,24 +50,42 @@ def _init_db() -> None:
                 status TEXT NOT NULL,
                 worker_type TEXT NOT NULL,
                 payload TEXT NOT NULL,
+                result TEXT,
+                claimed_by TEXT,
+                parent_id TEXT,
                 created_at TEXT,
                 updated_at TEXT
             )
             """
         )
-        # Migrate DBs created before the timestamp columns existed.
-        for col in ("created_at", "updated_at"):
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                recipient TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            )
+            """
+        )
+        # Migrate DBs created before the timestamp and new columns existed.
+        for col in ("created_at", "updated_at", "result", "claimed_by", "parent_id"):
             with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs (status, worker_type, created_at)"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_job_id ON messages (job_id)")
+
         conn.commit()
 
 
 def submit_job(args: SubmitJobArgs) -> str:
-    """Submits a new job to the dispatcher."""
-    allow_spawn = os.environ.get("MCP_DISPATCHER_ALLOW_SPAWN", "").lower()
-    if allow_spawn not in ("1", "true"):
-        raise RuntimeError("Spawning is not allowed")
-
+    """Submits a new job to the dispatcher queue."""
     try:
         payload_str = json.dumps(args.payload)
     except TypeError as e:
@@ -106,70 +97,61 @@ def submit_job(args: SubmitJobArgs) -> str:
             f"Payload is {payload_bytes} bytes, exceeds the {MAX_PAYLOAD_BYTES}-byte limit"
         )
 
-    # Reap any finished workers first so the Running count reflects reality.
-    _reap_children()
-
     _init_db()
     job_id = str(uuid.uuid4())
     db_path = get_db_path()
     now = _now()
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
-        conn.isolation_level = None
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            # Bound fan-out: refuse to spawn once too many jobs are already Running.
-            cap = _max_running()
-            running = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM jobs WHERE status = ?", (JobStatus.RUNNING.value,)
-                ).fetchone()[0]
-            )
-            if running >= cap:
-                raise RuntimeError(
-                    f"Too many jobs in flight: {running} Running >= cap {cap}. "
-                    "Wait for jobs to finish or raise MCP_DISPATCHER_MAX_RUNNING."
-                )
-            conn.execute(
-                "INSERT INTO jobs (id, status, worker_type, payload, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (job_id, JobStatus.RUNNING.value, args.worker_type, payload_str, now, now),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-
-    env = {k: v for k, v in os.environ.items() if k in {"PATH", "USER", "HOME", "LANG", "LC_ALL"}}
-    env["AGY_JOB_ID"] = job_id
-    env["AGY_WORKER_TYPE"] = args.worker_type
-    env["MCP_DISPATCHER_DB_PATH"] = str(db_path)
-    prompt = "You are a background worker. Read your AGY_WORKER_TYPE and AGY_JOB_ID from your environment variables. Fetch your job payload using the get_job_status tool for that job_id and execute the task. When finished, you must update the job status in the dispatcher DB."
-
-    # Asynchronously spawn the worker.
-    # stdin MUST be detached: without it the child inherits this MCP server's
-    # stdin — the live stdio JSON-RPC pipe — which never sends EOF, so
-    # `agy --print` blocks reading it and hangs forever (job stuck Running,
-    # empty log). DEVNULL gives it an immediate EOF so it runs non-interactively.
-    try:
-        subprocess.Popen(
-            ["agy", f"--print={prompt}"],
-            start_new_session=True,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        conn.execute(
+            "INSERT INTO jobs (id, status, worker_type, payload, parent_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                job_id,
+                JobStatus.QUEUED.value,
+                args.worker_type,
+                payload_str,
+                args.parent_id,
+                now,
+                now,
+            ),
         )
-    except Exception:
-        with contextlib.closing(sqlite3.connect(db_path)) as conn:
-            conn.execute(
-                "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
-                (JobStatus.FAILED.value, _now(), job_id),
-            )
-            conn.commit()
-        raise
+        conn.commit()
 
     return job_id
+
+
+def claim_job(args: ClaimJobArgs) -> str:
+    """Atomically claims the oldest Queued job for the given worker type."""
+    _init_db()
+    db_path = get_db_path()
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.isolation_level = None
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = conn.execute(
+                "SELECT id FROM jobs WHERE status = ? AND worker_type = ? ORDER BY created_at ASC LIMIT 1",
+                (JobStatus.QUEUED.value, args.worker_type),
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.execute("ROLLBACK")
+                return json.dumps({"job": None})
+
+            job_id = row["id"]
+            now = _now()
+            conn.execute(
+                "UPDATE jobs SET status = ?, claimed_by = ?, updated_at = ? WHERE id = ?",
+                (JobStatus.RUNNING.value, args.agent_id, now, job_id),
+            )
+            conn.execute("COMMIT")
+
+            job_data = _fetch_job(db_path, job_id)
+            return json.dumps({"job": job_data})
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 def _fetch_job(db_path: Path, job_id: str) -> dict[str, object] | None:
@@ -181,9 +163,14 @@ def _fetch_job(db_path: Path, job_id: str) -> dict[str, object] | None:
         return None
     job_data = dict(row)
     try:
-        job_data["payload"] = json.loads(job_data["payload"])
+        job_data["payload"] = json.loads(str(job_data["payload"]))
     except json.JSONDecodeError:
         job_data["payload"] = {"error": "Invalid JSON in database"}
+
+    if job_data.get("result"):
+        with contextlib.suppress(json.JSONDecodeError):
+            job_data["result"] = json.loads(str(job_data["result"]))
+
     return job_data
 
 
@@ -197,29 +184,38 @@ def get_job_status(args: GetJobStatusArgs) -> str:
 
 
 def update_job_status(args: UpdateJobStatusArgs) -> str:
-    """Update a job's status (Running/Completed/Failed) and stamp updated_at.
-
-    The path a spawned worker uses to report progress; the status is validated
-    against the JobStatus enum so only known lifecycle states can be written.
-    """
+    """Update a job's status and optionally set result."""
     _init_db()
     db_path = get_db_path()
+
+    result_str = None
+    if args.result is not None:
+        result_str = json.dumps(args.result)
+        result_bytes = len(result_str.encode("utf-8"))
+        if result_bytes > MAX_PAYLOAD_BYTES:
+            raise ValueError(
+                f"Result is {result_bytes} bytes, exceeds the {MAX_PAYLOAD_BYTES}-byte limit"
+            )
+
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
-        # Guard the transition atomically: the WHERE clause refuses to touch a
-        # row already in a terminal state, so two concurrent callers can't race
-        # a SELECT/UPDATE window to clobber a terminal status. rowcount then
-        # tells us whether anything changed.
         terminal = tuple(_TERMINAL_STATUSES)
         placeholders = ", ".join("?" for _ in terminal)
-        cursor = conn.execute(
-            f"UPDATE jobs SET status = ?, updated_at = ? "  # noqa: S608 — placeholders only
-            f"WHERE id = ? AND status NOT IN ({placeholders})",
-            (args.status.value, _now(), args.job_id, *terminal),
-        )
+
+        if result_str is not None:
+            cursor = conn.execute(
+                f"UPDATE jobs SET status = ?, result = ?, updated_at = ? "  # noqa: S608
+                f"WHERE id = ? AND status NOT IN ({placeholders})",
+                (args.status.value, result_str, _now(), args.job_id, *terminal),
+            )
+        else:
+            cursor = conn.execute(
+                f"UPDATE jobs SET status = ?, updated_at = ? "  # noqa: S608
+                f"WHERE id = ? AND status NOT IN ({placeholders})",
+                (args.status.value, _now(), args.job_id, *terminal),
+            )
         conn.commit()
 
         if cursor.rowcount == 0:
-            # No row updated: the job is unknown, or it is already terminal.
             current = conn.execute(
                 "SELECT status FROM jobs WHERE id = ?", (args.job_id,)
             ).fetchone()
@@ -234,6 +230,40 @@ def update_job_status(args: UpdateJobStatusArgs) -> str:
 
     job_data = _fetch_job(db_path, args.job_id)
     return json.dumps(job_data)
+
+
+def send_message(args: SendMessageArgs) -> str:
+    """Append a message to a job's conversation history."""
+    _init_db()
+    db_path = get_db_path()
+    msg_id = str(uuid.uuid4())
+    now = _now()
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            "INSERT INTO messages (id, job_id, sender, recipient, content, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (msg_id, args.job_id, args.sender, args.recipient, args.content, now),
+        )
+        conn.commit()
+    return json.dumps({"id": msg_id, "status": "sent"})
+
+
+def get_messages(args: GetMessagesArgs) -> str:
+    """Retrieve messages for a job."""
+    _init_db()
+    db_path = get_db_path()
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        query = "SELECT * FROM messages WHERE job_id = ?"
+        params: list[object] = [args.job_id]
+        if args.since:
+            query += " AND created_at > ?"
+            params.append(args.since)
+        query += " ORDER BY created_at ASC"
+        cursor = conn.execute(query, tuple(params))
+        rows = cursor.fetchall()
+    return json.dumps([dict(row) for row in rows])
 
 
 def list_jobs(args: ListJobsArgs) -> str:
@@ -259,18 +289,13 @@ def list_jobs(args: ListJobsArgs) -> str:
 
 
 def cleanup_jobs(args: CleanupJobsArgs) -> str:
-    """Delete terminal (Completed/Failed) jobs to bound table growth.
-
-    Only terminal jobs are ever removed, so an in-flight ``Running`` job is never
-    dropped. With ``older_than_days`` set, only terminal jobs whose last update is
-    older than the cutoff are deleted; otherwise all terminal jobs are removed.
-    """
+    """Delete terminal (Completed/Failed) jobs to bound table growth."""
     _init_db()
     db_path = get_db_path()
 
     terminal = tuple(_TERMINAL_STATUSES)
     placeholders = ", ".join("?" for _ in terminal)
-    query = f"DELETE FROM jobs WHERE status IN ({placeholders})"  # noqa: S608 — placeholders only
+    query = f"DELETE FROM jobs WHERE status IN ({placeholders})"  # noqa: S608
     params: list[object] = [*terminal]
     if args.older_than_days is not None:
         cutoff = (datetime.now(UTC) - timedelta(days=args.older_than_days)).isoformat()
@@ -278,6 +303,7 @@ def cleanup_jobs(args: CleanupJobsArgs) -> str:
         params.append(cutoff)
 
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.execute(query, tuple(params))
         conn.commit()
         deleted = cursor.rowcount
