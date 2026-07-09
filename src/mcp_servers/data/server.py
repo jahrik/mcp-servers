@@ -20,10 +20,16 @@ from . import tools
 mcp = FastMCP("data")
 
 # Register tools
-mcp.tool()(tools.duckdb_query)
-mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.duckdb_describe)
-mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.duckdb_list_tables)
-mcp.tool()(tools.duckdb_close_database)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))(tools.duckdb_query)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))(
+    tools.duckdb_describe
+)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))(
+    tools.duckdb_list_tables
+)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))(
+    tools.duckdb_close_database
+)
 
 
 def main() -> None:
