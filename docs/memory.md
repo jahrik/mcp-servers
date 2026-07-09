@@ -51,6 +51,14 @@ List stored memories, most recently updated first. Content is capped identically
 - `limit` (integer, optional): Maximum results (default `50`, max `1000`).
 - `offset` (integer, optional): Number of memories to skip, for pagination.
 
+## On-demand pruning
+
+When the memory store becomes noisy or slow to search, run a deliberate cleanup sweep. Do not run this on a schedule.
+1. **Consolidate repeated observations**: Merge duplicated or highly overlapping memories into a single, comprehensive record.
+2. **Archive-on-conflict**: When new facts contradict old ones, archive the old ones rather than deleting them immediately, or merge them to reflect the evolution of the fact.
+3. **Prune lowest-confidence first**: Discard transient, low-value, or low-confidence memories before high-value ones.
+4. **Cap total store size**: Enforce a reasonable upper bound on total active memories to keep recall relevant.
+
 ## Search modes
 
 Search is **fully local** — no embedding provider, API key, or per-query network call. Memory
