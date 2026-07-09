@@ -22,7 +22,6 @@ mcp.tool()(tools.remember)
 mcp.tool()(tools.recall)
 mcp.tool()(tools.forget)
 mcp.tool()(tools.list_memories)
-mcp.tool()(tools.sync_existing_data)
 
 
 def main() -> None:
