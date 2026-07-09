@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import subprocess
 from pathlib import Path
 
 import pytest
-from pytest_mock import MockerFixture, MockType
 
 from mcp_servers.dispatcher import server
 from mcp_servers.dispatcher.models.schemas import (
+    ClaimJobArgs,
     CleanupJobsArgs,
     GetJobStatusArgs,
+    GetMessagesArgs,
     JobStatus,
     ListJobsArgs,
+    SendMessageArgs,
     SubmitJobArgs,
     UpdateJobStatusArgs,
 )
@@ -27,63 +28,46 @@ def mock_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return db_path
 
 
-@pytest.fixture
-def mock_subprocess(mocker: MockerFixture) -> MockType:
-    # Spawning a real `agy` subprocess is the true I/O boundary — fake only that.
-    return mocker.patch("mcp_servers.dispatcher.tools.jobs.subprocess.Popen")
-
-
-@pytest.mark.parametrize("allow_val", ["true", "1", "TRUE", "True"])
-def test_submit_job(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch, allow_val: str
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", allow_val)
-
-    # Test submission
+def test_submit_job(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
 
-    # Assert subprocess was called
-    mock_subprocess.assert_called_once()
-    args, kwargs = mock_subprocess.call_args
-    assert args[0][0] == "agy"
-    assert args[0][1].startswith("--print=You are a background worker")
-    assert "Read your AGY_WORKER_TYPE and AGY_JOB_ID" in args[0][1]
-    assert "get_job_status tool" in args[0][1]
-    assert kwargs.get("start_new_session") is True
-    # stdin must be detached (DEVNULL): inheriting the server's stdio JSON-RPC
-    # pipe makes `agy --print` block on a never-EOF stdin and hang forever.
-    assert kwargs.get("stdin") == subprocess.DEVNULL
-    assert kwargs.get("stdout") == subprocess.DEVNULL
-    assert kwargs.get("stderr") == subprocess.DEVNULL
-
-    assert "env" in kwargs
-    assert kwargs["env"]["AGY_JOB_ID"] == job_id
-    assert kwargs["env"]["AGY_WORKER_TYPE"] == "test_worker"
-    assert kwargs["env"]["MCP_DISPATCHER_DB_PATH"] == str(mock_db)
-
-    # Assert DB state
     with sqlite3.connect(mock_db) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = cursor.fetchone()
 
     assert row is not None
-    assert row["status"] == "Running"
+    assert row["status"] == "Queued"
     assert row["worker_type"] == "test_worker"
     assert row["payload"] == '{"foo": "bar"}'
 
 
-def test_get_job_status(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_claim_job(mock_db: Path) -> None:
+    job_id1 = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"job": 1}))
+    jobs.submit_job(SubmitJobArgs(worker_type="other_worker", payload={"job": 2}))
+
+    res_str = jobs.claim_job(ClaimJobArgs(worker_type="test_worker", agent_id="agent-1"))
+    res = json.loads(res_str)
+
+    assert res["job"] is not None
+    assert res["job"]["id"] == job_id1
+    assert res["job"]["status"] == "Running"
+    assert res["job"]["claimed_by"] == "agent-1"
+
+    # Next claim for test_worker should find nothing
+    res_str2 = jobs.claim_job(ClaimJobArgs(worker_type="test_worker", agent_id="agent-1"))
+    res2 = json.loads(res_str2)
+    assert res2["job"] is None
+
+
+def test_get_job_status(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
 
     status_str = jobs.get_job_status(GetJobStatusArgs(job_id=job_id))
     status = json.loads(status_str)
 
     assert status["id"] == job_id
-    assert status["status"] == "Running"
+    assert status["status"] == "Queued"
     assert status["worker_type"] == "test_worker"
     assert status["payload"] == {"foo": "bar"}
 
@@ -96,12 +80,8 @@ def test_get_job_status_not_found(mock_db: Path) -> None:
     assert "error" in status
 
 
-def test_get_job_status_invalid_json(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "1")
+def test_get_job_status_invalid_json(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
-    # Corrupt the JSON in the DB
     with sqlite3.connect(mock_db) as conn:
         conn.execute("UPDATE jobs SET payload = ? WHERE id = ?", ("{bad json", job_id))
         conn.commit()
@@ -111,29 +91,26 @@ def test_get_job_status_invalid_json(
     assert status["payload"] == {"error": "Invalid JSON in database"}
 
 
-def test_submit_job_stamps_timestamps(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_submit_job_stamps_timestamps(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
 
     status = json.loads(jobs.get_job_status(GetJobStatusArgs(job_id=job_id)))
     assert status["created_at"] is not None
-    # A brand-new job hasn't been updated since creation.
     assert status["updated_at"] == status["created_at"]
 
 
-def test_update_job_status(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_update_job_status(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"k": "v"}))
+    jobs.claim_job(ClaimJobArgs(worker_type="test_worker", agent_id="agent-1"))
 
     res = json.loads(
-        jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED))
+        jobs.update_job_status(
+            UpdateJobStatusArgs(job_id=job_id, status=JobStatus.COMPLETED, result={"ans": 42})
+        )
     )
     assert res["status"] == "Completed"
     assert res["payload"] == {"k": "v"}
+    assert res["result"] == {"ans": 42}
     assert res["updated_at"] is not None
 
 
@@ -170,42 +147,12 @@ def test_server_main(monkeypatch: pytest.MonkeyPatch) -> None:
     assert called
 
 
-def test_submit_job_spawn_not_allowed(mock_db: Path) -> None:
-    with pytest.raises(RuntimeError, match="Spawning is not allowed"):
-        jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
-
-
-def test_submit_job_non_serializable_payload(
-    mock_db: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_submit_job_non_serializable_payload(mock_db: Path) -> None:
     with pytest.raises(ValueError, match="Payload must be JSON-serializable"):
         jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": object()}))
 
 
-def test_submit_job_subprocess_exception(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    mock_subprocess.side_effect = Exception("Popen failed")
-
-    with pytest.raises(Exception, match="Popen failed"):
-        jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={"foo": "bar"}))
-
-    # Assert DB state is updated to Failed
-    with sqlite3.connect(mock_db) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute("SELECT * FROM jobs")
-        row = cursor.fetchone()
-
-    assert row is not None
-    assert row["status"] == "Failed"
-
-
-def test_update_job_status_terminal_is_immutable(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_update_job_status_terminal_is_immutable(mock_db: Path) -> None:
     job_id = jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload={}))
 
     # First move to a terminal state.
@@ -222,16 +169,10 @@ def test_update_job_status_terminal_is_immutable(
     assert status["status"] == "Completed"
 
 
-def test_submit_job_rejects_oversized_payload(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_submit_job_rejects_oversized_payload(mock_db: Path) -> None:
     oversized = {"blob": "x" * (jobs.MAX_PAYLOAD_BYTES + 1)}
     with pytest.raises(ValueError, match="exceeds the"):
         jobs.submit_job(SubmitJobArgs(worker_type="test_worker", payload=oversized))
-
-    # Rejected before the DB is even touched — nothing persisted or spawned.
-    mock_subprocess.assert_not_called()
     assert not mock_db.exists()
 
 
@@ -242,11 +183,8 @@ def test_submit_job_rejects_overlong_worker_type() -> None:
         SubmitJobArgs(worker_type="a" * 257, payload={})
 
 
-def test_connections_are_closed(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_connections_are_closed(mock_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every SQLite connection the tools open must be closed (no fd leak)."""
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
 
     real_connect = sqlite3.connect
     opened: list[sqlite3.Connection] = []
@@ -269,11 +207,7 @@ def test_connections_are_closed(
             conn.execute("SELECT 1")
 
 
-def test_list_jobs_newest_first(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-
+def test_list_jobs_newest_first(mock_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Monkeypatch _now to return deterministic, ordered timestamps
     counter = 0
 
@@ -297,11 +231,7 @@ def test_list_jobs_newest_first(
     assert res[1]["worker_type"] == "worker1"
 
 
-def test_list_jobs_status_filter(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-
+def test_list_jobs_status_filter(mock_db: Path) -> None:
     job_id1 = jobs.submit_job(SubmitJobArgs(worker_type="worker1", payload={}))
     job_id2 = jobs.submit_job(SubmitJobArgs(worker_type="worker2", payload={}))
     jobs.update_job_status(UpdateJobStatusArgs(job_id=job_id1, status=JobStatus.COMPLETED))
@@ -310,16 +240,12 @@ def test_list_jobs_status_filter(
     assert len(res) == 1
     assert res[0]["id"] == job_id1
 
-    res = json.loads(jobs.list_jobs(ListJobsArgs(status=JobStatus.RUNNING)))
+    res = json.loads(jobs.list_jobs(ListJobsArgs(status=JobStatus.QUEUED)))
     assert len(res) == 1
     assert res[0]["id"] == job_id2
 
 
-def test_list_jobs_limit(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-
+def test_list_jobs_limit(mock_db: Path) -> None:
     for i in range(5):
         jobs.submit_job(SubmitJobArgs(worker_type=f"worker{i}", payload={}))
 
@@ -327,12 +253,7 @@ def test_list_jobs_limit(
     assert len(res) == 3
 
 
-def test_cleanup_jobs_removes_only_terminal(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "10")
-
+def test_cleanup_jobs_removes_only_terminal(mock_db: Path) -> None:
     j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
     j2 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
     j3 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
@@ -342,15 +263,12 @@ def test_cleanup_jobs_removes_only_terminal(
     res = json.loads(jobs.cleanup_jobs(CleanupJobsArgs()))
     assert res["deleted"] == 2
 
-    # The still-Running job survives.
+    # The still-Queued job survives.
     remaining = json.loads(jobs.list_jobs(ListJobsArgs()))
     assert [r["id"] for r in remaining] == [j3]
 
 
-def test_cleanup_jobs_older_than_keeps_fresh(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
+def test_cleanup_jobs_older_than_keeps_fresh(mock_db: Path) -> None:
     j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
     jobs.update_job_status(UpdateJobStatusArgs(job_id=j1, status=JobStatus.COMPLETED))
 
@@ -360,48 +278,21 @@ def test_cleanup_jobs_older_than_keeps_fresh(
     assert json.loads(jobs.cleanup_jobs(CleanupJobsArgs()))["deleted"] == 1
 
 
-def test_submit_job_respects_max_running(
-    mock_db: Path, mock_subprocess: MockType, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MCP_DISPATCHER_ALLOW_SPAWN", "true")
-    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", "2")
+def test_send_and_get_messages(mock_db: Path) -> None:
+    job_id = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
 
-    j1 = jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
-    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
+    # Send a message
+    res = json.loads(
+        jobs.send_message(
+            SendMessageArgs(job_id=job_id, sender="claude", recipient="qa", content="Hello world")
+        )
+    )
+    assert res["status"] == "sent"
 
-    # Third submit exceeds the cap and is refused before spawning.
-    with pytest.raises(RuntimeError, match="Too many jobs in flight"):
-        jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))
-
-    # Finishing a job frees a slot.
-    jobs.update_job_status(UpdateJobStatusArgs(job_id=j1, status=JobStatus.COMPLETED))
-    jobs.submit_job(SubmitJobArgs(worker_type="w", payload={}))  # no raise
-
-
-def test_reap_children_drops_finished(monkeypatch: pytest.MonkeyPatch) -> None:
-    import os
-
-    calls = 0
-
-    def mock_waitpid(pid: int, options: int) -> tuple[int, int]:
-        nonlocal calls
-        if calls == 0:
-            calls += 1
-            return 1234, 0  # Reaped one process
-        if calls == 1:
-            calls += 1
-            return 0, 0  # No more exited children (covers the `if pid == 0: break` branch)
-        raise ChildProcessError()
-
-    monkeypatch.setattr(os, "waitpid", mock_waitpid)
-
-    # Should consume the one child and then break when pid == 0.
-    jobs._reap_children()
-    assert calls == 2
-
-
-@pytest.mark.parametrize("raw", ["not-an-int", "0", "-3"])
-def test_max_running_falls_back_to_default(raw: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A non-numeric or non-positive override is ignored in favour of the default.
-    monkeypatch.setenv("MCP_DISPATCHER_MAX_RUNNING", raw)
-    assert jobs._max_running() == jobs._DEFAULT_MAX_RUNNING
+    # Get messages
+    msgs = json.loads(jobs.get_messages(GetMessagesArgs(job_id=job_id)))
+    assert len(msgs) == 1
+    assert msgs[0]["sender"] == "claude"
+    assert msgs[0]["recipient"] == "qa"
+    assert msgs[0]["content"] == "Hello world"
+    assert msgs[0]["job_id"] == job_id

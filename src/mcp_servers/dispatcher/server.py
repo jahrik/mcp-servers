@@ -1,6 +1,6 @@
 """A dispatcher MCP server for delegating jobs to subagents.
 
-Manages job state in an SQLite database and asynchronously spawns subagents to handle them.
+Manages job state and peer-to-peer messages in an SQLite database.
 """
 
 from __future__ import annotations
@@ -17,10 +17,13 @@ mcp = FastMCP("dispatcher")
 
 # Register tools
 mcp.tool()(tools.submit_job)
+mcp.tool()(tools.claim_job)
 mcp.tool()(tools.get_job_status)
 mcp.tool()(tools.update_job_status)
 mcp.tool()(tools.list_jobs)
 mcp.tool()(tools.cleanup_jobs)
+mcp.tool()(tools.send_message)
+mcp.tool()(tools.get_messages)
 
 
 def main() -> None:
