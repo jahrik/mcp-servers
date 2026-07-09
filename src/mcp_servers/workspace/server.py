@@ -16,16 +16,17 @@ import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools
 
 mcp = FastMCP("workspace")
 
 # Register all tools
-mcp.tool()(tools.ws_status)
-mcp.tool()(tools.ws_repo)
-mcp.tool()(tools.ws_branches)
-mcp.tool()(tools.ws_log)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ws_status)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ws_repo)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ws_branches)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ws_log)
 
 
 def main() -> None:

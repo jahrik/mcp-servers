@@ -17,41 +17,42 @@ import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools
 
 mcp = FastMCP("github")
 
 # Register all tools
-mcp.tool()(tools.gh_repo_list)
-mcp.tool()(tools.gh_repo_get)
-mcp.tool()(tools.gh_pr_list)
-mcp.tool()(tools.gh_pr_get)
-mcp.tool()(tools.gh_pr_diff)
-mcp.tool()(tools.gh_pr_checks)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_repo_list)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_repo_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_pr_list)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_pr_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_pr_diff)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_pr_checks)
 mcp.tool()(tools.gh_pr_create)
 mcp.tool()(tools.gh_pr_edit)
 mcp.tool()(tools.gh_pr_comment)
 mcp.tool()(tools.gh_pr_merge)
 mcp.tool()(tools.gh_pr_request_reviewers)
-mcp.tool()(tools.gh_issue_list)
-mcp.tool()(tools.gh_issue_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_issue_list)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_issue_get)
 mcp.tool()(tools.gh_issue_create)
 mcp.tool()(tools.gh_issue_comment)
 mcp.tool()(tools.gh_issue_edit)
-mcp.tool()(tools.gh_file_get)
-mcp.tool()(tools.gh_search_code)
-mcp.tool()(tools.gh_search_prs)
-mcp.tool()(tools.gh_search_issues)
-mcp.tool()(tools.gh_run_list)
-mcp.tool()(tools.gh_run_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_file_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_search_code)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_search_prs)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_search_issues)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_run_list)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_run_get)
 mcp.tool()(tools.gh_run_rerun)
-mcp.tool()(tools.gh_run_failed_logs)
-mcp.tool()(tools.gh_review_comments_list)
-mcp.tool()(tools.gh_review_threads_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_run_failed_logs)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_review_comments_list)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_review_threads_get)
 mcp.tool()(tools.gh_review_comment_reply)
 mcp.tool()(tools.gh_review_thread_resolve)
-mcp.tool()(tools.gh_api_get)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.gh_api_get)
 mcp.tool()(tools.gh_api_graphql)
 
 

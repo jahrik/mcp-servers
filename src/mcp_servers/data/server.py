@@ -13,6 +13,7 @@ import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools
 
@@ -20,8 +21,8 @@ mcp = FastMCP("data")
 
 # Register tools
 mcp.tool()(tools.duckdb_query)
-mcp.tool()(tools.duckdb_describe)
-mcp.tool()(tools.duckdb_list_tables)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.duckdb_describe)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.duckdb_list_tables)
 mcp.tool()(tools.duckdb_close_database)
 
 

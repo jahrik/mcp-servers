@@ -11,6 +11,7 @@ import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools
 
@@ -19,9 +20,9 @@ mcp = FastMCP("memory")
 
 # Register tools
 mcp.tool()(tools.remember)
-mcp.tool()(tools.recall)
-mcp.tool()(tools.forget)
-mcp.tool()(tools.list_memories)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.recall)
+mcp.tool(annotations=ToolAnnotations(destructiveHint=True))(tools.forget)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.list_memories)
 
 
 def main() -> None:

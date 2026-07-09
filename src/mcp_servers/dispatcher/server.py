@@ -10,6 +10,7 @@ import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools
 
@@ -18,12 +19,12 @@ mcp = FastMCP("dispatcher")
 # Register tools
 mcp.tool()(tools.submit_job)
 mcp.tool()(tools.claim_job)
-mcp.tool()(tools.get_job_status)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.get_job_status)
 mcp.tool()(tools.update_job_status)
-mcp.tool()(tools.list_jobs)
-mcp.tool()(tools.cleanup_jobs)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.list_jobs)
+mcp.tool(annotations=ToolAnnotations(destructiveHint=True))(tools.cleanup_jobs)
 mcp.tool()(tools.send_message)
-mcp.tool()(tools.get_messages)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.get_messages)
 mcp.tool()(tools.heartbeat_job)
 mcp.tool()(tools.requeue_stalled_jobs)
 

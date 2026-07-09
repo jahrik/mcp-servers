@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import tools, utils
 
@@ -36,24 +37,24 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
 mcp = FastMCP("lsp", lifespan=server_lifespan)
 
-mcp.tool()(tools.lsp_hover)
-mcp.tool()(tools.lsp_definition)
-mcp.tool()(tools.lsp_references)
-mcp.tool()(tools.lsp_document_symbols)
-mcp.tool()(tools.lsp_workspace_symbols)
-mcp.tool()(tools.lsp_diagnostics)
-mcp.tool()(tools.lsp_type_definition)
-mcp.tool()(tools.lsp_implementation)
-mcp.tool()(tools.lsp_document_highlight)
-mcp.tool()(tools.lsp_call_hierarchy)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_hover)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_definition)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_references)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_document_symbols)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_workspace_symbols)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_diagnostics)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_type_definition)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_implementation)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_document_highlight)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_call_hierarchy)
 mcp.tool()(tools.lsp_rename)
-mcp.tool()(tools.lsp_code_actions)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.lsp_code_actions)
 mcp.tool()(tools.lsp_execute_code_action)
 mcp.tool()(tools.lsp_format)
-mcp.tool()(tools.ts_query)
-mcp.tool()(tools.ts_outline)
-mcp.tool()(tools.ts_extract)
-mcp.tool()(tools.ts_scope_at_position)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ts_query)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ts_outline)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ts_extract)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))(tools.ts_scope_at_position)
 
 
 def main() -> None:
