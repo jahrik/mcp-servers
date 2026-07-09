@@ -16,6 +16,9 @@ def _execute_forget(args: ForgetArgs) -> str:
             }
         )
 
+    # DuckDB returns the affected-row count as a one-row result set for DELETE, which
+    # is what we read below. (DB-API cursor.rowcount is unreliable in DuckDB, so it is
+    # intentionally not used; this couples forget to DuckDB, which is the only backend.)
     with get_db_conn(read_only=False) as conn:
         if args.id:
             res = conn.execute("DELETE FROM memories WHERE id = ?", [args.id]).fetchall()

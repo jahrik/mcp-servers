@@ -272,10 +272,11 @@ async def test_sync_existing_data(tmp_path):
     keys = {m["key"] for m in memories}
     assert "brain/conv-123/plan.md" in keys
     assert "summary/conv-summary-456" in keys
-    assert "claude/session-789" in keys
+    # Claude session keys include the project subdir to avoid cross-project collisions.
+    assert "claude/mcp-project/session-789" in keys
 
     # Verify content formatting
-    claude_mem = next(m for m in memories if m["key"] == "claude/session-789")
+    claude_mem = next(m for m in memories if m["key"] == "claude/mcp-project/session-789")
     assert "Sync project features" in claude_mem["content"]
     assert "How do we write new MCP tools?" in claude_mem["content"]
     assert "Use the FastMCP python library." in claude_mem["content"]
@@ -375,8 +376,8 @@ def test_ensure_initialized_runs_once(monkeypatch):
     assert calls == 1
 
 
-def test_db_conflict_retry(monkeypatch):
-    """Transaction/constraint conflicts are retried, not raised immediately."""
+def test_db_connection_conflict_retry(monkeypatch):
+    """Connection-open conflict/constraint errors (e.g. cold-start catalog races) retry."""
     import duckdb
 
     from mcp_servers.memory.tools.db import get_db_conn
@@ -388,7 +389,7 @@ def test_db_conflict_retry(monkeypatch):
         nonlocal attempts
         attempts += 1
         if attempts < 2:
-            raise duckdb.ConstraintException('Duplicate key "conflict_key" violates constraint')
+            raise duckdb.IOException("Catalog write-write conflict on create")
         return orig_connect(*args, **kwargs)
 
     monkeypatch.setattr(duckdb, "connect", mock_connect)
@@ -397,6 +398,38 @@ def test_db_conflict_retry(monkeypatch):
     with get_db_conn() as conn:
         assert conn is not None
     assert attempts == 2
+
+
+def test_db_caller_exception_propagates_cleanly():
+    """An exception raised inside the `with` body propagates as-is.
+
+    Regression test: the retry loop must not try to re-yield after an exception is
+    thrown into the generator (which would raise `RuntimeError: generator didn't stop
+    after throw()` and mask the real error). Even an error whose message matches the
+    connection-retry substrings must surface unchanged from the caller's body.
+    """
+    import duckdb
+
+    from mcp_servers.memory.tools.db import get_db_conn
+
+    with (
+        pytest.raises(duckdb.ConstraintException, match="unique constraint"),
+        get_db_conn(read_only=False),
+    ):
+        raise duckdb.ConstraintException("Duplicate key violates unique constraint")
+
+
+@pytest.mark.asyncio
+async def test_remember_same_key_is_atomic_upsert():
+    """Re-remembering a key updates in place via upsert — one row, no duplicate-key error."""
+    await remember(RememberArgs(content="first", key="dup"))
+    res = json.loads(await remember(RememberArgs(content="second", key="dup")))
+    assert res["action"] == "updated"
+
+    listed = json.loads(await list_memories(ListMemoriesArgs()))
+    rows = [m for m in listed["memories"] if m["key"] == "dup"]
+    assert len(rows) == 1
+    assert rows[0]["content"] == "second"
 
 
 def test_db_lock_handling(monkeypatch):
@@ -431,10 +464,10 @@ async def test_recall_falls_back_without_fts(monkeypatch):
     await remember(RememberArgs(content="Python was created by Guido van Rossum.", key="py"))
     await remember(RememberArgs(content="Ansible manages configuration.", key="ans"))
 
-    # Force the BM25 path to report "unavailable" so the lexical fallback runs.
+    # Force the FTS path to report "unavailable" so the lexical fallback runs.
     # tools/__init__ shadows the submodule attribute, so reach it via sys.modules.
     recall_mod = sys.modules["mcp_servers.memory.tools.recall"]
-    monkeypatch.setattr(recall_mod, "_bm25_scores", lambda conn, query: None)
+    monkeypatch.setattr(recall_mod, "_fts_ranked_rows", lambda conn, args: None)
 
     res = json.loads(await recall(RecallArgs(query="Python Guido")))
     assert len(res["results"]) > 0
