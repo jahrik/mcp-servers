@@ -3,22 +3,34 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import math
 
-from ..client import get_embedding
+import duckdb
+
 from ..models.schemas import RecallArgs
-from .db import get_db_conn
+from .db import get_db_conn, truncate_content
 
 
-def cosine_similarity(v1: list[float] | None, v2: list[float] | None) -> float:
-    if not v1 or not v2 or len(v1) != len(v2):
-        return 0.0
-    dot = sum(a * b for a, b in zip(v1, v2, strict=True))
-    norm1 = math.sqrt(sum(a * a for a in v1))
-    norm2 = math.sqrt(sum(b * b for b in v2))
-    if norm1 == 0.0 or norm2 == 0.0:
-        return 0.0
-    return dot / (norm1 * norm2)
+def _bm25_scores(conn: duckdb.DuckDBPyConnection, query: str) -> dict[str, float] | None:
+    """Return {id: BM25 score} using the local full-text index, or None if unavailable.
+
+    Falls back to None (so the caller uses lexical token-overlap scoring) when the
+    fts extension or index is not present — e.g. offline before it is cached, or
+    before the first write has built the index.
+    """
+    try:
+        conn.execute("LOAD fts;")
+        rows = conn.execute(
+            """
+            SELECT id, score FROM (
+                SELECT id, fts_main_memories.match_bm25(id, ?) AS score
+                FROM memories
+            ) WHERE score IS NOT NULL
+            """,
+            [query],
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+    except duckdb.Error:
+        return None
 
 
 def get_keyword_score(content: str, key: str | None, query: str) -> float:
@@ -44,22 +56,22 @@ def get_keyword_score(content: str, key: str | None, query: str) -> float:
 
 
 def _execute_recall(args: RecallArgs) -> str:
-    query_embedding = get_embedding(args.query)
-
     # Build SQL query with basic category filter
-    sql = "SELECT id, key, content, category, tags, embedding, created_at, updated_at FROM memories"
+    sql = "SELECT id, key, content, category, tags, created_at, updated_at FROM memories"
     params = []
     if args.category:
         sql += " WHERE category = ?"
         params.append(args.category)
 
     with get_db_conn(read_only=True) as conn:
+        # Prefer local BM25 full-text ranking; fall back to token overlap.
+        bm25 = _bm25_scores(conn, args.query)
         cursor = conn.execute(sql, params)
         rows = cursor.fetchall()
 
     scored_results = []
     for row in rows:
-        mem_id, key, content, category, tags_json, embedding_val, created_at, updated_at = row
+        mem_id, key, content, category, tags_json, created_at, updated_at = row
 
         # Parse tags
         tags = []
@@ -71,28 +83,30 @@ def _execute_recall(args: RecallArgs) -> str:
         if args.tags and (not tags or not any(t in tags for t in args.tags)):
             continue
 
-        # Score the memory
-        if query_embedding and embedding_val:
-            score = cosine_similarity(query_embedding, embedding_val)
+        # Score the memory: BM25 when the full-text index is available, else lexical.
+        if bm25 is not None:
+            score = bm25.get(mem_id, 0.0)
         else:
             score = get_keyword_score(content, key, args.query)
 
-        # Only include memories that have some relevance
+        # Only include memories that have some relevance. Scoring above uses the
+        # full content; the returned copy is capped so a large memory cannot
+        # overflow the caller's context window.
         if score > 0.0:
-            scored_results.append(
-                (
-                    score,
-                    {
-                        "id": mem_id,
-                        "key": key,
-                        "content": content,
-                        "category": category,
-                        "tags": tags,
-                        "created_at": created_at.isoformat() if created_at else None,
-                        "updated_at": updated_at.isoformat() if updated_at else None,
-                    },
-                )
-            )
+            content_text, truncated = truncate_content(content)
+            item = {
+                "id": mem_id,
+                "key": key,
+                "content": content_text,
+                "category": category,
+                "tags": tags,
+                "created_at": created_at.isoformat() if created_at else None,
+                "updated_at": updated_at.isoformat() if updated_at else None,
+            }
+            if truncated:
+                item["content_truncated"] = True
+                item["content_length"] = len(content)
+            scored_results.append((score, item))
 
     # Sort by score descending
     scored_results.sort(key=lambda x: x[0], reverse=True)
@@ -105,7 +119,8 @@ def _execute_recall(args: RecallArgs) -> str:
 async def recall(args: RecallArgs) -> str:
     """Search stored memories for facts, preferences, or details relevant to a query.
 
-    Uses vector embeddings if configured, falling back to keyword and token overlap search.
+    Ranks matches with a local BM25 full-text index, falling back to keyword and
+    token-overlap scoring when the index is unavailable. Runs fully offline.
 
     Args:
         query: Search term or query text.

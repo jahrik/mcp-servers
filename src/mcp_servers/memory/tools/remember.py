@@ -5,18 +5,14 @@ import json
 import uuid
 from datetime import datetime
 
-from ..client import get_embedding
 from ..models.schemas import RememberArgs
-from .db import get_db_conn
+from .db import get_db_conn, rebuild_fts_index
 
 
 def _execute_remember(args: RememberArgs) -> str:
     # 1. Resolve key uniqueness and generate an ID
     mem_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
-
-    # Get embedding vector (optional)
-    embedding_val = get_embedding(args.content)
 
     tags_str = json.dumps(args.tags) if args.tags is not None else None
 
@@ -34,32 +30,24 @@ def _execute_remember(args: RememberArgs) -> str:
             conn.execute(
                 """
                 UPDATE memories
-                SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
+                SET content = ?, category = ?, tags = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 [
                     args.content,
                     args.category,
                     tags_str,
-                    embedding_val,
                     now,
                     existing_id,
                 ],
             )
-            return json.dumps(
-                {
-                    "status": "success",
-                    "action": "updated",
-                    "id": existing_id,
-                    "key": args.key,
-                }
-            )
+            action, result_id = "updated", existing_id
         else:
             # Insert a new memory
             conn.execute(
                 """
-                INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO memories (id, key, content, category, tags, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     mem_id,
@@ -67,19 +55,23 @@ def _execute_remember(args: RememberArgs) -> str:
                     args.content,
                     args.category,
                     tags_str,
-                    embedding_val,
                     now,
                     now,
                 ],
             )
-            return json.dumps(
-                {
-                    "status": "success",
-                    "action": "created",
-                    "id": mem_id,
-                    "key": args.key,
-                }
-            )
+            action, result_id = "created", mem_id
+
+        # Refresh the full-text index so the new/updated content is searchable.
+        rebuild_fts_index(conn)
+
+    return json.dumps(
+        {
+            "status": "success",
+            "action": action,
+            "id": result_id,
+            "key": args.key,
+        }
+    )
 
 
 async def remember(args: RememberArgs) -> str:

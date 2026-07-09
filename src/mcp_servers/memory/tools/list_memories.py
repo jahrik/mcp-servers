@@ -5,7 +5,7 @@ import contextlib
 import json
 
 from ..models.schemas import ListMemoriesArgs
-from .db import get_db_conn
+from .db import get_db_conn, truncate_content
 
 
 def _execute_list_memories(args: ListMemoriesArgs) -> str:
@@ -30,17 +30,20 @@ def _execute_list_memories(args: ListMemoriesArgs) -> str:
         if tags_json:
             with contextlib.suppress(Exception):
                 tags = json.loads(tags_json)
-        results.append(
-            {
-                "id": mem_id,
-                "key": key,
-                "content": content,
-                "category": category,
-                "tags": tags,
-                "created_at": created_at.isoformat() if created_at else None,
-                "updated_at": updated_at.isoformat() if updated_at else None,
-            }
-        )
+        content_text, truncated = truncate_content(content)
+        item = {
+            "id": mem_id,
+            "key": key,
+            "content": content_text,
+            "category": category,
+            "tags": tags,
+            "created_at": created_at.isoformat() if created_at else None,
+            "updated_at": updated_at.isoformat() if updated_at else None,
+        }
+        if truncated:
+            item["content_truncated"] = True
+            item["content_length"] = len(content)
+        results.append(item)
 
     return json.dumps({"memories": results})
 

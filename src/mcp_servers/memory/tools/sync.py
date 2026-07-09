@@ -10,9 +10,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from ..client import get_embedding
 from ..models.schemas import SyncExistingDataArgs
-from .db import get_db_conn
+from .db import get_db_conn, rebuild_fts_index
 
 logger = logging.getLogger("mcp-memory.sync")
 
@@ -251,10 +250,9 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
             }
         )
 
-    # Resolve embeddings and format tags outside the DB write lock context to avoid lock contention
+    # Format tags outside the DB write lock context to keep the write section short.
     prepared_memories = []
     for m in all_memories:
-        embedding_val = get_embedding(m["content"])
         tags_str = json.dumps(m["tags"])
         prepared_memories.append(
             {
@@ -262,7 +260,6 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                 "content": m["content"],
                 "category": m["category"],
                 "tags_str": tags_str,
-                "embedding": embedding_val,
             }
         )
 
@@ -282,14 +279,13 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                     conn.execute(
                         """
                         UPDATE memories
-                        SET content = ?, category = ?, tags = ?, embedding = ?, updated_at = ?
+                        SET content = ?, category = ?, tags = ?, updated_at = ?
                         WHERE id = ?
                         """,
                         [
                             pm["content"],
                             pm["category"],
                             pm["tags_str"],
-                            pm["embedding"],
                             now,
                             row[0],
                         ],
@@ -299,8 +295,8 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                     mem_id = uuid_from_key(str(pm["key"]))
                     conn.execute(
                         """
-                        INSERT INTO memories (id, key, content, category, tags, embedding, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO memories (id, key, content, category, tags, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         [
                             mem_id,
@@ -308,7 +304,6 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                             pm["content"],
                             pm["category"],
                             pm["tags_str"],
-                            pm["embedding"],
                             now,
                             now,
                         ],
@@ -316,6 +311,9 @@ def _execute_sync(args: SyncExistingDataArgs) -> str:
                 imported_count += 1
             except Exception as e:
                 logger.error("Failed to import memory key %s: %s", pm["key"], e)
+
+        # Refresh the full-text index once after the batch import.
+        rebuild_fts_index(conn)
 
     return json.dumps(
         {

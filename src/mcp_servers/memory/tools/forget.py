@@ -4,7 +4,7 @@ import asyncio
 import json
 
 from ..models.schemas import ForgetArgs
-from .db import get_db_conn
+from .db import get_db_conn, rebuild_fts_index
 
 
 def _execute_forget(args: ForgetArgs) -> str:
@@ -25,6 +25,10 @@ def _execute_forget(args: ForgetArgs) -> str:
             res = conn.execute("DELETE FROM memories WHERE key = ?", [args.key]).fetchall()
             rows_deleted = res[0][0] if res else 0
             target = f"key '{args.key}'"
+
+        # Keep BM25 statistics accurate after a deletion.
+        if rows_deleted > 0:
+            rebuild_fts_index(conn)
 
     if rows_deleted > 0:
         return json.dumps(
