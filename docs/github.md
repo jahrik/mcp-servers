@@ -164,16 +164,6 @@ Every write invocation is recorded in a local SQLite audit log at `~/.mcp/audit.
 - **Audit logging** — the audit log records each write's command, execution duration, success status, and full stderr.
 - **Error handling** — on failure the server returns context rather than a raw Python stack trace.
 
-## Known gaps
-
-Tracked in [#64](https://github.com/jahrik/mcp-servers/issues/64):
-
-- **No way to close or reopen a PR** — `gh_pr_edit` has no `state` field (unlike
-  `gh_issue_edit`), and `gh_api_graphql` rejects mutations. Workaround: deleting the PR's
-  remote branch auto-closes it.
-- **`gh_api_graphql` annotation mismatch** — the server enforces it read-only (mutations are
-  rejected), but its `ToolAnnotations` currently mark it destructive.
-
 ## Configuration
 
 - `MCP_GITHUB_ALLOW_WRITE`: Set to `1` to enable the write tools. Unset, all write tools are refused; read tools always work.
