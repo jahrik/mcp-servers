@@ -16,8 +16,9 @@ src/mcp_servers/
 ├── github/           # GitHub App access (REST + GraphQL) → mcp-github
 ├── workspace/        # read-only local git surveys   → mcp-workspace
 ├── data/             # SQL over local files (DuckDB)  → mcp-data
-├── dispatcher/       # async subagent job dispatch    → mcp-dispatcher
-└── lsp/              # LSP router + tree-sitter        → mcp-lsp
+├── dispatcher/       # async agent job queue (pull)   → mcp-dispatcher
+├── lsp/              # LSP router + tree-sitter        → mcp-lsp
+└── memory/           # cross-session memory (DuckDB)   → mcp-memory
 tests/                # mirrors src/, per server
 docs/                 # one page per server
 .github/workflows/ci.yml

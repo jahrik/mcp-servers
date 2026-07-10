@@ -17,8 +17,12 @@ owning its own plumbing (HTTP client, validation, caching). One repo, one CI, on
 | `data`       | `mcp-data`       | SQL over large local files and scratch tables across calls (DuckDB engine) |
 | `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration              |
 | `lsp`        | `mcp-lsp`        | Multi-language LSP router plus tree-sitter: navigation, symbols, refactors |
+| `memory`     | `mcp-memory`     | Persistent cross-session long-term memory store (DuckDB + full-text search) |
 
-Each server has detailed documentation under [`docs/`](docs/).
+Each server has detailed documentation under [`docs/`](docs/). Every tool carries MCP
+`ToolAnnotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so
+permission layers and hook scripts can reason about risk — and clients can parallelize
+read-only calls.
 
 ### `github`
 
@@ -46,9 +50,9 @@ See [`docs/data.md`](docs/data.md).
 
 ### `dispatcher`
 
-Asynchronous agent-to-agent task delegation: spawn and monitor background subagents for
-long-running workflows, with job state tracked in SQLite. Spawning is gated behind
-`MCP_DISPATCHER_ALLOW_SPAWN`.
+Asynchronous agent-to-agent task delegation on a collaborative pull model: agents queue jobs,
+standing workers claim and execute them (heartbeats, stall requeue, per-job messaging), with
+job state tracked in SQLite. No process spawning — workers are long-lived peers.
 
 See [`docs/dispatcher.md`](docs/dispatcher.md).
 
@@ -61,6 +65,15 @@ lifecycles. It also bundles offline tree-sitter tools (`ts_*`) for instant struc
 outlines. Prefer these over grep for anything semantic.
 
 See [`docs/lsp.md`](docs/lsp.md).
+
+### `memory`
+
+A persistent, cross-session long-term memory store shared by every agent in the harness:
+`remember` / `recall` / `forget` / `list_memories` over a DuckDB database with BM25 full-text
+ranking. Pull-based — facts surface when an agent asks, not automatically. No credentials
+needed.
+
+See [`docs/memory.md`](docs/memory.md).
 
 ## Install
 
