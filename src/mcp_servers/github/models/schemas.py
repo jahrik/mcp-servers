@@ -172,6 +172,9 @@ class MilestoneListArgs(BaseModel, frozen=True):
     state: typing.Literal["open", "closed", "all"] = Field(
         "open", description="``open``, ``closed``, or ``all``."
     )
+    limit: int = Field(
+        30, ge=1, le=100, description="Maximum number of milestones to return (1-100)."
+    )
 
 
 class FileGetArgs(BaseModel, frozen=True):

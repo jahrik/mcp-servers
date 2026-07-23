@@ -52,7 +52,7 @@ async def test_gh_milestone_create_with_optional_fields(httpx_mock, monkeypatch)
 @pytest.mark.asyncio
 async def test_gh_milestone_list(httpx_mock):
     httpx_mock.add_response(
-        url="https://api.github.com/repos/octocat/repo/milestones?state=open",
+        url="https://api.github.com/repos/octocat/repo/milestones?state=open&per_page=30",
         json=[
             {
                 "number": 1,
@@ -68,3 +68,13 @@ async def test_gh_milestone_list(httpx_mock):
     assert len(data) == 1
     assert data[0]["number"] == 1
     assert data[0]["openIssues"] == 3
+
+
+@pytest.mark.asyncio
+async def test_gh_milestone_list_with_limit(httpx_mock):
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/milestones?state=all&per_page=5",
+        json=[{"number": i} for i in range(5)],
+    )
+    res = await gh_milestone_list(MilestoneListArgs(repo="octocat/repo", state="all", limit=5))
+    assert len(json.loads(res)) == 5

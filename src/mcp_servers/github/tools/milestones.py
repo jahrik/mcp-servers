@@ -37,7 +37,10 @@ async def gh_milestone_list(args: MilestoneListArgs) -> str:
     """List milestones for a repo."""
     repo = args.repo
     validate_repo(repo)
-    resp = await gh_request("GET", f"repos/{repo}/milestones", params={"state": args.state})
+    limit = max(1, min(args.limit, 100))
+    resp = await gh_request(
+        "GET", f"repos/{repo}/milestones", params={"state": args.state, "per_page": limit}
+    )
     items = resp.json()
     results = [
         {
@@ -52,4 +55,4 @@ async def gh_milestone_list(args: MilestoneListArgs) -> str:
         }
         for r in items
     ]
-    return json.dumps(results)
+    return json.dumps(results[:limit])
