@@ -31,9 +31,9 @@ Fill in:
   | Contents               | Read & write* | `gh_file_get`, `gh_search_code` (*write only if you'll add file-write tools later; today none exist) |
   | Metadata               | Read-only (mandatory, auto-selected) | every request |
   | Pull requests           | Read & write | `gh_pr_*`, `gh_review_*` |
-  | Issues                  | Read & write | `gh_issue_*` |
+  | Issues                  | Read & write | `gh_issue_*`, `gh_milestone_*` |
   | Checks                  | Read-only | `gh_pr_checks` |
-  | Actions                 | Read-only | `gh_run_*` |
+  | Actions                 | Read & write* | `gh_run_list`/`gh_run_get`/`gh_run_failed_logs` only need Read; `gh_run_rerun` needs Write (a Read-only grant returns `403 Forbidden` on rerun) |
 
   Skip permissions you don't need — e.g. drop Issues/PR write scopes for a read-only deployment.
 - **Where can this GitHub App be installed?** — "Only on this account" unless you deliberately
