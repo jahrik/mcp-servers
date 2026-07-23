@@ -126,6 +126,7 @@ that the comment shows up as `<app-name>[bot]`, not your own account.
 - `gh_pr_checks`
 - `gh_issue_list`
 - `gh_issue_get`
+- `gh_milestone_list`
 - `gh_file_get`
 - `gh_search_code`
 - `gh_search_prs`
@@ -152,7 +153,8 @@ Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
 - `gh_run_rerun` — rerun a GitHub Actions workflow run, or only its failed jobs (`failed_only`).
 - `gh_issue_create`
 - `gh_issue_comment`
-- `gh_issue_edit` — change state (close/reopen via `state` + `state_reason`), title, body, or labels.
+- `gh_issue_edit` — change state (close/reopen via `state` + `state_reason`), title, body, labels, or `milestone` (a milestone number from `gh_milestone_list`, or `'clear'` to remove it).
+- `gh_milestone_create`
 - `gh_review_comment_reply`
 - `gh_review_thread_resolve`
 

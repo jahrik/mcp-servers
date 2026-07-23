@@ -45,6 +45,16 @@ EXPECTED_MAPS = {
         "gh_issue_edit": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": False},
         "gh_issue_get": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_issue_list": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
+        "gh_milestone_create": {
+            "destructiveHint": False,
+            "openWorldHint": True,
+            "readOnlyHint": False,
+        },
+        "gh_milestone_list": {
+            "destructiveHint": False,
+            "openWorldHint": True,
+            "readOnlyHint": True,
+        },
         "gh_pr_checks": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_pr_comment": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": False},
         "gh_pr_create": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": False},

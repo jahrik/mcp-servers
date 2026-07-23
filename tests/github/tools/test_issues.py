@@ -106,6 +106,34 @@ async def test_gh_issue_edit_metadata(httpx_mock, monkeypatch):
     assert sent == {"title": "new title", "body": "new body", "labels": ["bug"]}
 
 
+@pytest.mark.asyncio
+async def test_gh_issue_edit_milestone(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="PATCH",
+        url="https://api.github.com/repos/octocat/repo/issues/1",
+        json={"number": 1, "milestone": {"number": 3}},
+    )
+    res = await gh_issue_edit(IssueEditArgs(repo="octocat/repo", number=1, milestone=3))
+    assert json.loads(res)["number"] == 1
+    sent = json.loads(httpx_mock.get_requests(method="PATCH")[0].content)
+    assert sent == {"milestone": 3}
+
+
+@pytest.mark.asyncio
+async def test_gh_issue_edit_milestone_clear(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="PATCH",
+        url="https://api.github.com/repos/octocat/repo/issues/1",
+        json={"number": 1, "milestone": None},
+    )
+    res = await gh_issue_edit(IssueEditArgs(repo="octocat/repo", number=1, milestone="clear"))
+    assert json.loads(res)["number"] == 1
+    sent = json.loads(httpx_mock.get_requests(method="PATCH")[0].content)
+    assert sent == {"milestone": None}
+
+
 def test_issue_edit_args_requires_a_field():
     from pydantic import ValidationError
 

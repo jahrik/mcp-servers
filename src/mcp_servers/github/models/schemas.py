@@ -121,14 +121,28 @@ class IssueEditArgs(BaseModel, frozen=True):
     labels: list[str] | None = Field(
         None, description="Replace the issue's labels with this set (omit to leave unchanged)."
     )
+    milestone: int | None | typing.Literal["clear"] = Field(
+        None,
+        description="Milestone number to assign (from ``gh_milestone_list``), or the literal "
+        "string ``'clear'`` to remove the issue's milestone. Omit to leave unchanged.",
+    )
 
     @model_validator(mode="after")
     def _check_fields(self) -> IssueEditArgs:
         if all(
-            v is None for v in (self.state, self.state_reason, self.title, self.body, self.labels)
+            v is None
+            for v in (
+                self.state,
+                self.state_reason,
+                self.title,
+                self.body,
+                self.labels,
+                self.milestone,
+            )
         ):
             raise ValueError(
-                "Provide at least one field to edit (state, state_reason, title, body, or labels)."
+                "Provide at least one field to edit (state, state_reason, title, body, "
+                "labels, or milestone)."
             )
         if self.state_reason is not None:
             required_state = {
@@ -141,6 +155,26 @@ class IssueEditArgs(BaseModel, frozen=True):
                     f"state_reason={self.state_reason!r} requires state={required_state!r}."
                 )
         return self
+
+
+class MilestoneCreateArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    title: str = Field(description="Title of the milestone.")
+    description: str | None = Field(None, description="Optional description of the milestone.")
+    due_on: str | None = Field(
+        None,
+        description="Optional due date as an ISO 8601 timestamp (e.g. ``2026-12-31T00:00:00Z``).",
+    )
+
+
+class MilestoneListArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    state: typing.Literal["open", "closed", "all"] = Field(
+        "open", description="``open``, ``closed``, or ``all``."
+    )
+    limit: int = Field(
+        30, ge=1, le=100, description="Maximum number of milestones to return (1-100)."
+    )
 
 
 class FileGetArgs(BaseModel, frozen=True):
