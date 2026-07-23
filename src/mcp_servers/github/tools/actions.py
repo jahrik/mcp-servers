@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 from mcp_servers.github.client import GhError, gh_request, validate_ref, validate_repo
 
@@ -48,19 +50,14 @@ async def gh_run_list(args: RunListArgs) -> str:
     return json.dumps(results[:limit])
 
 
-async def gh_run_get(args: RunArgs) -> str:
-    """Get details of a specific GitHub Actions workflow run."""
-    repo = args.repo
-    run_id = args.run_id
-    validate_repo(repo)
-
+async def _fetch_run(repo: str, run_id: int) -> dict:
     run_resp = await gh_request("GET", f"repos/{repo}/actions/runs/{run_id}")
     r = run_resp.json()
 
     jobs_resp = await gh_request("GET", f"repos/{repo}/actions/runs/{run_id}/jobs")
     jobs = jobs_resp.json().get("jobs", [])
 
-    result = {
+    return {
         "databaseId": r.get("id"),
         "name": r.get("name"),
         "displayTitle": r.get("display_title"),
@@ -75,6 +72,37 @@ async def gh_run_get(args: RunArgs) -> str:
             for j in jobs
         ],
     }
+
+
+async def gh_run_get(args: RunArgs) -> str:
+    """Get details of a specific GitHub Actions workflow run.
+
+    With ``wait_for_completion=True``, polls in-process until ``status ==
+    "completed"`` or ``timeout_seconds`` elapses, then returns the final (or
+    last-seen) run details in the same shape as a plain snapshot call — so an
+    agent watching a run doesn't have to loop calls across separate turns.
+    Each sleep is capped to the time remaining before the deadline, and no
+    fetch is made once the deadline has passed, so the call does not block
+    past ``timeout_seconds`` or make a trailing API call after it.
+    """
+    repo = args.repo
+    run_id = args.run_id
+    validate_repo(repo)
+
+    result = await _fetch_run(repo, run_id)
+    if not args.wait_for_completion:
+        return json.dumps(result)
+
+    deadline = time.monotonic() + args.timeout_seconds
+    while result.get("status") != "completed":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        await asyncio.sleep(min(args.poll_interval_seconds, remaining))
+        if time.monotonic() >= deadline:
+            break
+        result = await _fetch_run(repo, run_id)
+
     return json.dumps(result)
 
 

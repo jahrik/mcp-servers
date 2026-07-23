@@ -225,6 +225,22 @@ class RunListArgs(BaseModel, frozen=True):
 class RunArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     run_id: int = Field(description="The run ID (databaseId).")
+    wait_for_completion: bool = Field(
+        False,
+        description="If true, poll until the run's status is ``completed`` (or the timeout "
+        "is hit) instead of returning a single snapshot.",
+    )
+    timeout_seconds: int = Field(
+        300,
+        ge=1,
+        le=1800,
+        description="Maximum time to poll when ``wait_for_completion`` is true (1-1800s).",
+    )
+    poll_interval_seconds: int = Field(
+        15,
+        ge=1,
+        description="Delay between polls when ``wait_for_completion`` is true.",
+    )
 
 
 class RunRerunArgs(BaseModel, frozen=True):
