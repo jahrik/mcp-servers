@@ -131,7 +131,7 @@ that the comment shows up as `<app-name>[bot]`, not your own account.
 - `gh_search_prs`
 - `gh_search_issues`
 - `gh_run_list`
-- `gh_run_get`
+- `gh_run_get` — pass `wait_for_completion=true` to poll in-process until the run's `status` is `completed` (or `timeout_seconds` elapses, default 300s, max 1800s; `poll_interval_seconds` between polls, default 15) instead of returning a single snapshot.
 - `gh_run_failed_logs`
 - `gh_review_comments_list`
 - `gh_review_threads_get`

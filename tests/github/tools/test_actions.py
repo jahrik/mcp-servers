@@ -49,6 +49,79 @@ async def test_gh_run_get(httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_gh_run_get_wait_for_completion(httpx_mock, monkeypatch):
+    """Polls until status flips to completed, sleeping between polls."""
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("mcp_servers.github.tools.actions.asyncio.sleep", fake_sleep)
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1",
+        json={"id": 1, "status": "in_progress"},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
+        json={"jobs": []},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1",
+        json={"id": 1, "status": "completed", "conclusion": "success"},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
+        json={"jobs": []},
+    )
+
+    res = await gh_run_get(
+        RunArgs(repo="octocat/repo", run_id=1, wait_for_completion=True, poll_interval_seconds=1)
+    )
+    data = json.loads(res)
+    assert data["status"] == "completed"
+    assert data["conclusion"] == "success"
+    assert sleeps == [1]
+
+
+@pytest.mark.asyncio
+async def test_gh_run_get_wait_for_completion_timeout(httpx_mock, monkeypatch):
+    """Stops polling once the timeout elapses and returns the last-seen snapshot."""
+    fake_time = [0.0]
+
+    def fake_monotonic():
+        return fake_time[0]
+
+    async def fake_sleep(seconds):
+        fake_time[0] += seconds
+
+    monkeypatch.setattr("mcp_servers.github.tools.actions.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("mcp_servers.github.tools.actions.asyncio.sleep", fake_sleep)
+
+    for _ in range(3):
+        httpx_mock.add_response(
+            url="https://api.github.com/repos/octocat/repo/actions/runs/1",
+            json={"id": 1, "status": "in_progress"},
+        )
+        httpx_mock.add_response(
+            url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
+            json={"jobs": []},
+        )
+
+    res = await gh_run_get(
+        RunArgs(
+            repo="octocat/repo",
+            run_id=1,
+            wait_for_completion=True,
+            timeout_seconds=2,
+            poll_interval_seconds=1,
+        )
+    )
+    data = json.loads(res)
+    assert data["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
 async def test_gh_run_failed_logs(httpx_mock):
     httpx_mock.add_response(
         url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
