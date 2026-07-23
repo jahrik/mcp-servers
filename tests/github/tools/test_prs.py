@@ -173,6 +173,27 @@ async def test_gh_pr_edit(httpx_mock, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gh_pr_edit_close(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        method="PATCH",
+        url="https://api.github.com/repos/octocat/repo/pulls/1",
+        json={"number": 1, "state": "closed"},
+    )
+    res = await gh_pr_edit(PrEditArgs(repo="octocat/repo", pr=1, state="closed"))
+    assert json.loads(res)["state"] == "closed"
+    sent = json.loads(httpx_mock.get_requests(method="PATCH")[0].content)
+    assert sent == {"state": "closed"}
+
+
+def test_pr_edit_args_requires_a_field():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="at least one field"):
+        PrEditArgs(repo="octocat/repo", pr=1)
+
+
+@pytest.mark.asyncio
 async def test_gh_pr_comment(httpx_mock, monkeypatch):
     monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
     httpx_mock.add_response(
