@@ -146,7 +146,7 @@ The review-read tools take `bot_only` to keep just the Copilot/bot comments — 
 Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
 
 - `gh_pr_create` — when `base` is omitted it defaults to the repo's default branch (rather than 422ing); a genuine 422 surfaces the API's `errors` array.
-- `gh_pr_edit`
+- `gh_pr_edit` — title, body, or `state` (`closed` to close, `open` to reopen).
 - `gh_pr_comment`
 - `gh_pr_merge`
 - `gh_pr_request_reviewers` — to request a Copilot review, pass the login `Copilot` (not the `copilot-pull-request-reviewer[bot]` app slug). GitHub silently ignores an unrecognized reviewer login, so the tool adds a `warning` naming anyone it dropped.

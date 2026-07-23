@@ -117,7 +117,7 @@ mcp.tool(
 mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))(
     tools.gh_api_get
 )
-mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=True))(
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))(
     tools.gh_api_graphql
 )
 

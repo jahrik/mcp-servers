@@ -189,6 +189,8 @@ async def gh_pr_edit(args: PrEditArgs) -> str:
         data["title"] = args.title
     if args.body is not None:  # pragma: no cover
         data["body"] = args.body
+    if args.state is not None:
+        data["state"] = args.state
     resp = await gh_request("PATCH", f"repos/{repo}/pulls/{pr}", json=data)
     return json.dumps(resp.json())
 

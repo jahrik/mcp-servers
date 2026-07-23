@@ -41,6 +41,15 @@ class PrEditArgs(BaseModel, frozen=True):
     pr: int = Field(description="Pull request number.")
     title: str | None = Field(None, description="Optional new title for the pull request.")
     body: str | None = Field(None, description="Optional new body for the pull request.")
+    state: typing.Literal["open", "closed"] | None = Field(
+        None, description="``closed`` to close the pull request, ``open`` to reopen it."
+    )
+
+    @model_validator(mode="after")
+    def _check_fields(self) -> PrEditArgs:
+        if all(v is None for v in (self.title, self.body, self.state)):
+            raise ValueError("Provide at least one field to edit (title, body, or state).")
+        return self
 
 
 class PrCreateArgs(BaseModel, frozen=True):

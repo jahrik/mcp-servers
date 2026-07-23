@@ -34,7 +34,7 @@ EXPECTED_MAPS = {
     },
     "github": {
         "gh_api_get": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
-        "gh_api_graphql": {"destructiveHint": True, "openWorldHint": True, "readOnlyHint": False},
+        "gh_api_graphql": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_file_get": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_issue_comment": {
             "destructiveHint": False,
