@@ -16,6 +16,7 @@ from .issues import (
     gh_issue_get,
     gh_issue_list,
 )
+from .milestones import gh_milestone_create, gh_milestone_list
 from .prs import (
     gh_pr_checks,
     gh_pr_comment,
@@ -44,6 +45,8 @@ __all__ = [
     "gh_issue_edit",
     "gh_issue_get",
     "gh_issue_list",
+    "gh_milestone_create",
+    "gh_milestone_list",
     "gh_pr_checks",
     "gh_pr_comment",
     "gh_pr_create",

@@ -119,12 +119,13 @@ async def gh_issue_comment(args: IssueCommentArgs) -> str:
 
 @_audit_log
 async def gh_issue_edit(args: IssueEditArgs) -> str:
-    """Edit an issue's state or metadata (close/reopen, title, body, labels).
+    """Edit an issue's state or metadata (close/reopen, title, body, labels, milestone).
 
     Only the fields you set are sent. ``state='closed'`` with
     ``state_reason='completed'`` or ``'not_planned'`` closes the issue;
-    ``state='open'`` reopens it. Convention: close only your own stale or
-    resolved issues, never triage the maintainer's.
+    ``state='open'`` reopens it. ``milestone`` takes a milestone number (from
+    ``gh_milestone_list``) or the literal ``'clear'`` to remove it. Convention:
+    close only your own stale or resolved issues, never triage the maintainer's.
     """
     repo = args.repo
     number = args.number
@@ -140,5 +141,7 @@ async def gh_issue_edit(args: IssueEditArgs) -> str:
         data["body"] = args.body
     if args.labels is not None:
         data["labels"] = args.labels
+    if args.milestone is not None:
+        data["milestone"] = None if args.milestone == "clear" else args.milestone
     resp = await gh_request("PATCH", f"repos/{repo}/issues/{number}", json=data)
     return json.dumps(resp.json())

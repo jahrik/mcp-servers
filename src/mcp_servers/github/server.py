@@ -72,6 +72,12 @@ mcp.tool(
 mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
 )(tools.gh_issue_edit)
+mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
+)(tools.gh_milestone_create)
+mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))(
+    tools.gh_milestone_list
+)
 mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))(
     tools.gh_file_get
 )
