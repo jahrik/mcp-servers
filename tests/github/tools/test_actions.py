@@ -86,7 +86,7 @@ async def test_gh_run_get_wait_for_completion(httpx_mock, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gh_run_get_wait_for_completion_timeout(httpx_mock, monkeypatch):
-    """Stops polling once the timeout elapses and returns the last-seen snapshot."""
+    """Stops polling once the timeout elapses, without a trailing fetch past the deadline."""
     fake_time = [0.0]
 
     def fake_monotonic():
@@ -98,7 +98,9 @@ async def test_gh_run_get_wait_for_completion_timeout(httpx_mock, monkeypatch):
     monkeypatch.setattr("mcp_servers.github.tools.actions.time.monotonic", fake_monotonic)
     monkeypatch.setattr("mcp_servers.github.tools.actions.asyncio.sleep", fake_sleep)
 
-    for _ in range(3):
+    # Initial fetch + one in-loop fetch; the second poll's sleep reaches the
+    # deadline exactly, so no third fetch should be made.
+    for _ in range(2):
         httpx_mock.add_response(
             url="https://api.github.com/repos/octocat/repo/actions/runs/1",
             json={"id": 1, "status": "in_progress"},
@@ -119,6 +121,46 @@ async def test_gh_run_get_wait_for_completion_timeout(httpx_mock, monkeypatch):
     )
     data = json.loads(res)
     assert data["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_gh_run_get_wait_for_completion_caps_sleep_to_remaining_time(httpx_mock, monkeypatch):
+    """poll_interval_seconds larger than timeout_seconds must not overshoot the deadline."""
+    fake_time = [0.0]
+    sleeps = []
+
+    def fake_monotonic():
+        return fake_time[0]
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        fake_time[0] += seconds
+
+    monkeypatch.setattr("mcp_servers.github.tools.actions.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("mcp_servers.github.tools.actions.asyncio.sleep", fake_sleep)
+
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1",
+        json={"id": 1, "status": "in_progress"},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/actions/runs/1/jobs",
+        json={"jobs": []},
+    )
+
+    res = await gh_run_get(
+        RunArgs(
+            repo="octocat/repo",
+            run_id=1,
+            wait_for_completion=True,
+            timeout_seconds=2,
+            poll_interval_seconds=30,
+        )
+    )
+    data = json.loads(res)
+    assert data["status"] == "in_progress"
+    # The sleep is capped to the 2s remaining, not the full 30s poll interval.
+    assert sleeps == [2]
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,9 @@ async def gh_run_get(args: RunArgs) -> str:
     "completed"`` or ``timeout_seconds`` elapses, then returns the final (or
     last-seen) run details in the same shape as a plain snapshot call — so an
     agent watching a run doesn't have to loop calls across separate turns.
+    Each sleep is capped to the time remaining before the deadline, and no
+    fetch is made once the deadline has passed, so the call does not block
+    past ``timeout_seconds`` or make a trailing API call after it.
     """
     repo = args.repo
     run_id = args.run_id
@@ -91,8 +94,13 @@ async def gh_run_get(args: RunArgs) -> str:
         return json.dumps(result)
 
     deadline = time.monotonic() + args.timeout_seconds
-    while result.get("status") != "completed" and time.monotonic() < deadline:
-        await asyncio.sleep(args.poll_interval_seconds)
+    while result.get("status") != "completed":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        await asyncio.sleep(min(args.poll_interval_seconds, remaining))
+        if time.monotonic() >= deadline:
+            break
         result = await _fetch_run(repo, run_id)
 
     return json.dumps(result)
