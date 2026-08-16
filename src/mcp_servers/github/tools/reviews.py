@@ -40,6 +40,14 @@ mutation($threadId:ID!){
 """
 
 
+def _normalize_login(reviewer_login: str | None) -> str | None:
+    """Treat an empty/whitespace login as unset, so it doesn't silently fall back to bot_only."""
+    if reviewer_login is None:
+        return None
+    stripped = reviewer_login.strip()
+    return stripped or None
+
+
 async def _fetch_review_comments(
     repo: str, pr: int, bot_only: bool, reviewer_login: str | None
 ) -> list[dict]:
@@ -79,7 +87,7 @@ async def gh_review_comments_list(args: ReviewCommentsListArgs) -> str:
     repo = args.repo
     pr = args.pr
     bot_only = args.bot_only
-    reviewer_login = args.reviewer_login
+    reviewer_login = _normalize_login(args.reviewer_login)
     validate_repo(repo)
 
     results = await _fetch_review_comments(repo, pr, bot_only, reviewer_login)
@@ -139,7 +147,7 @@ async def gh_review_threads_get(args: ReviewThreadsGetArgs) -> str:
     repo = args.repo
     pr = args.pr
     bot_only = args.bot_only
-    reviewer_login = args.reviewer_login
+    reviewer_login = _normalize_login(args.reviewer_login)
     validate_repo(repo)
 
     data, nodes = await _fetch_review_threads(repo, pr, bot_only, reviewer_login)
