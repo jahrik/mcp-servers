@@ -18,6 +18,16 @@ from mcp_servers.github.tools.reviews import (
 )
 
 
+def _threads_response(nodes: list[dict]) -> dict:
+    """Wrap review-thread nodes in the standard reviewThreads GraphQL envelope."""
+    return {"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}}
+
+
+def _thread(login: str, typename: str = "User") -> dict:
+    """A single review-thread node with one comment from the given author."""
+    return {"comments": {"nodes": [{"author": {"__typename": typename, "login": login}}]}}
+
+
 @pytest.mark.asyncio
 async def test_gh_review_comments_list(httpx_mock):
     httpx_mock.add_response(
@@ -36,10 +46,7 @@ async def test_gh_review_comments_list(httpx_mock):
 
 @pytest.mark.asyncio
 async def test_gh_review_threads_get(httpx_mock):
-    httpx_mock.add_response(
-        url="https://api.github.com/graphql",
-        json={"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}},
-    )
+    httpx_mock.add_response(url="https://api.github.com/graphql", json=_threads_response([]))
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, bot_only=True)
     )
@@ -95,26 +102,7 @@ async def test_gh_review_comments_list_nonbot(httpx_mock):
 @pytest.mark.asyncio
 async def test_gh_review_threads_get_bot(httpx_mock):
     httpx_mock.add_response(
-        url="https://api.github.com/graphql",
-        json={
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {
-                            "nodes": [
-                                {
-                                    "comments": {
-                                        "nodes": [
-                                            {"author": {"__typename": "User", "login": "octocat"}}
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
+        url="https://api.github.com/graphql", json=_threads_response([_thread("octocat")])
     )
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, bot_only=True)
@@ -126,25 +114,7 @@ async def test_gh_review_threads_get_bot(httpx_mock):
 async def test_gh_review_threads_get_bot_match(httpx_mock):
     httpx_mock.add_response(
         url="https://api.github.com/graphql",
-        json={
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {
-                            "nodes": [
-                                {
-                                    "comments": {
-                                        "nodes": [
-                                            {"author": {"__typename": "Bot", "login": "copilot"}}
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
+        json=_threads_response([_thread("copilot", "Bot")]),
     )
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, bot_only=True)
@@ -249,32 +219,7 @@ async def test_gh_review_comments_list_wait_for_completion_timeout(httpx_mock, m
 async def test_gh_review_threads_get_reviewer_login_filter(httpx_mock):
     httpx_mock.add_response(
         url="https://api.github.com/graphql",
-        json={
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {
-                            "nodes": [
-                                {
-                                    "comments": {
-                                        "nodes": [
-                                            {"author": {"__typename": "User", "login": "octocat"}}
-                                        ]
-                                    }
-                                },
-                                {
-                                    "comments": {
-                                        "nodes": [
-                                            {"author": {"__typename": "Bot", "login": "Copilot"}}
-                                        ]
-                                    }
-                                },
-                            ]
-                        }
-                    }
-                }
-            }
-        },
+        json=_threads_response([_thread("octocat"), _thread("Copilot", "Bot")]),
     )
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, reviewer_login="copilot")
@@ -287,30 +232,7 @@ async def test_gh_review_threads_get_reviewer_login_filter(httpx_mock):
 async def test_gh_review_threads_get_blank_reviewer_login_falls_back_to_bot_only(httpx_mock):
     httpx_mock.add_response(
         url="https://api.github.com/graphql",
-        json={
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {
-                            "nodes": [
-                                {
-                                    "comments": {
-                                        "nodes": [
-                                            {"author": {"__typename": "User", "login": "octocat"}}
-                                        ]
-                                    }
-                                },
-                                {
-                                    "comments": {
-                                        "nodes": [{"author": {"__typename": "Bot", "login": "bot"}}]
-                                    }
-                                },
-                            ]
-                        }
-                    }
-                }
-            }
-        },
+        json=_threads_response([_thread("octocat"), _thread("bot", "Bot")]),
     )
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(repo="octocat/repo", pr=1, bot_only=True, reviewer_login="  ")
@@ -328,21 +250,10 @@ async def test_gh_review_threads_get_wait_for_completion(httpx_mock, monkeypatch
 
     monkeypatch.setattr("mcp_servers.github.tools.reviews.asyncio.sleep", fake_sleep)
 
+    httpx_mock.add_response(url="https://api.github.com/graphql", json=_threads_response([]))
     httpx_mock.add_response(
         url="https://api.github.com/graphql",
-        json={"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}},
-    )
-    httpx_mock.add_response(
-        url="https://api.github.com/graphql",
-        json={
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {"nodes": [{"id": "t1", "comments": {"nodes": []}}]}
-                    }
-                }
-            }
-        },
+        json=_threads_response([{"id": "t1", "comments": {"nodes": []}}]),
     )
     res = await gh_review_threads_get(
         ReviewThreadsGetArgs(
