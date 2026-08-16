@@ -15,9 +15,11 @@ owning its own plumbing (HTTP client, validation, caching). One repo, one CI, on
 | `github`     | `mcp-github`     | GitHub access as a GitHub App: PRs, issues, files, code search, reviews    |
 | `workspace`  | `mcp-workspace`  | Read-only local git surveys: dirty trees, unpushed work, stale branches    |
 | `data`       | `mcp-data`       | SQL over large local files and scratch tables across calls (DuckDB engine) |
-| `dispatcher` | `mcp-dispatcher` | Asynchronous agent-to-agent task delegation and orchestration              |
-| `lsp`        | `mcp-lsp`        | Multi-language LSP router plus tree-sitter: navigation, symbols, refactors |
-| `memory`     | `mcp-memory`     | Persistent cross-session long-term memory store (DuckDB + full-text search) |
+
+`dispatcher`, `lsp`, and `memory` are **archived**: unused in production (see
+[`docs/`](docs/) for each), no longer registered with agents, and dropped from
+`[project.scripts]` so `uv tool install` doesn't build their binaries. Source stays in
+`src/mcp_servers/` for reference.
 
 Each server has detailed documentation under [`docs/`](docs/). Every tool carries MCP
 `ToolAnnotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so
@@ -48,7 +50,7 @@ window. DuckDB is the engine, so the tools keep the `duckdb_*` prefix.
 
 See [`docs/data.md`](docs/data.md).
 
-### `dispatcher`
+### `dispatcher` (archived)
 
 Asynchronous agent-to-agent task delegation on a collaborative pull model: agents queue jobs,
 standing workers claim and execute them (heartbeats, stall requeue, per-job messaging), with
@@ -56,7 +58,7 @@ job state tracked in SQLite. No process spawning — workers are long-lived peer
 
 See [`docs/dispatcher.md`](docs/dispatcher.md).
 
-### `lsp`
+### `lsp` (archived)
 
 A router that fronts real language servers (`ty` + `ruff` for Python, `gopls`, `rust-analyzer`,
 `typescript-language-server`), spawning one per language on demand, so agents get IDE-grade
@@ -66,7 +68,7 @@ outlines. Prefer these over grep for anything semantic.
 
 See [`docs/lsp.md`](docs/lsp.md).
 
-### `memory`
+### `memory` (archived)
 
 A persistent, cross-session long-term memory store shared by every agent in the harness:
 `remember` / `recall` / `forget` / `list_memories` over a DuckDB database with BM25 full-text
