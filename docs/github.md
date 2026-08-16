@@ -139,7 +139,7 @@ that the comment shows up as `<app-name>[bot]`, not your own account.
 - `gh_api_get`
 - `gh_api_graphql`
 
-The review-read tools take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review.
+The review-read tools take `bot_only` to keep just the Copilot/bot comments — the actionable ones in a review — or `reviewer_login` to filter to one specific login. Both also take `wait_for_completion=true` to poll in-process, mirroring `gh_run_get`, until at least one matching comment/thread appears (or `timeout_seconds` elapses, default 300s, max 1800s; `poll_interval_seconds` between polls, default 15) instead of returning a single snapshot — useful for waiting on a Copilot review to land.
 
 ## Write tools
 
@@ -150,6 +150,7 @@ Writes are disabled unless `MCP_GITHUB_ALLOW_WRITE=1` is set.
 - `gh_pr_comment`
 - `gh_pr_merge`
 - `gh_pr_request_reviewers` — to request a Copilot review, pass the login `Copilot` (not the `copilot-pull-request-reviewer[bot]` app slug). GitHub silently ignores an unrecognized reviewer login, so the tool adds a `warning` naming anyone it dropped.
+- `gh_pr_set_draft` — convert a PR to draft, or mark it ready for review (`draft=true`/`false`). The REST PR-edit endpoint has no `draft` field, so this goes through the `convertPullRequestToDraft`/`markPullRequestReadyForReview` GraphQL mutations.
 - `gh_run_rerun` — rerun a GitHub Actions workflow run, or only its failed jobs (`failed_only`).
 - `gh_issue_create`
 - `gh_issue_comment`

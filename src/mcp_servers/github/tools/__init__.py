@@ -27,6 +27,7 @@ from .prs import (
     gh_pr_list,
     gh_pr_merge,
     gh_pr_request_reviewers,
+    gh_pr_set_draft,
 )
 from .repos import gh_repo_get, gh_repo_list
 from .reviews import (
@@ -56,6 +57,7 @@ __all__ = [
     "gh_pr_list",
     "gh_pr_merge",
     "gh_pr_request_reviewers",
+    "gh_pr_set_draft",
     "gh_repo_get",
     "gh_repo_list",
     "gh_review_comment_reply",

@@ -12,6 +12,7 @@ from mcp_servers.github.models.schemas import (
     PrListArgs,
     PrMergeArgs,
     PrRequestReviewersArgs,
+    PrSetDraftArgs,
 )
 from mcp_servers.github.tools.prs import (
     _check_bucket,
@@ -24,6 +25,7 @@ from mcp_servers.github.tools.prs import (
     gh_pr_list,
     gh_pr_merge,
     gh_pr_request_reviewers,
+    gh_pr_set_draft,
 )
 
 
@@ -265,6 +267,57 @@ async def test_gh_pr_checks_missing_sha(httpx_mock):
     )
     with pytest.raises(GhError, match="PR head SHA unavailable"):
         await gh_pr_checks(PrArgs(repo="octocat/repo", number=1))
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_set_draft_converts_to_draft(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1",
+        json={"number": 1, "node_id": "PR_kwabc"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/graphql",
+        json={"data": {"convertPullRequestToDraft": {"pullRequest": {"isDraft": True}}}},
+    )
+    res = await gh_pr_set_draft(PrSetDraftArgs(repo="octocat/repo", pr=1, draft=True))
+    data = json.loads(res)
+    assert data["data"]["convertPullRequestToDraft"]["pullRequest"]["isDraft"] is True
+    sent = json.loads(httpx_mock.get_requests(method="POST")[0].content)
+    assert sent["variables"] == {"id": "PR_kwabc"}
+    assert "convertPullRequestToDraft" in sent["query"]
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_set_draft_marks_ready(httpx_mock, monkeypatch):
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1",
+        json={"number": 1, "node_id": "PR_kwabc"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.github.com/graphql",
+        json={"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": False}}}},
+    )
+    res = await gh_pr_set_draft(PrSetDraftArgs(repo="octocat/repo", pr=1, draft=False))
+    data = json.loads(res)
+    assert data["data"]["markPullRequestReadyForReview"]["pullRequest"]["isDraft"] is False
+    sent = json.loads(httpx_mock.get_requests(method="POST")[0].content)
+    assert "markPullRequestReadyForReview" in sent["query"]
+
+
+@pytest.mark.asyncio
+async def test_gh_pr_set_draft_missing_node_id(httpx_mock, monkeypatch):
+    from mcp_servers.github.client import GhError
+
+    monkeypatch.setenv("MCP_GITHUB_ALLOW_WRITE", "1")
+    httpx_mock.add_response(
+        url="https://api.github.com/repos/octocat/repo/pulls/1", json={"number": 1}
+    )
+    with pytest.raises(GhError, match="node id unavailable"):
+        await gh_pr_set_draft(PrSetDraftArgs(repo="octocat/repo", pr=1, draft=True))
 
 
 @pytest.mark.asyncio

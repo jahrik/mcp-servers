@@ -57,6 +57,9 @@ mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, o
 mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
 )(tools.gh_pr_request_reviewers)
+mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
+)(tools.gh_pr_set_draft)
 mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))(
     tools.gh_issue_list
 )

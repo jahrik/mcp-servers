@@ -13,6 +13,7 @@ from ..models.schemas import (
     PrListArgs,
     PrMergeArgs,
     PrRequestReviewersArgs,
+    PrSetDraftArgs,
 )
 from ..utils import _audit_log
 
@@ -202,6 +203,42 @@ async def gh_pr_comment(args: PrCommentArgs) -> str:
     pr = args.pr
     validate_repo(repo)
     resp = await gh_request("POST", f"repos/{repo}/issues/{pr}/comments", json={"body": args.body})
+    return json.dumps(resp.json())
+
+
+_CONVERT_TO_DRAFT_MUTATION = """
+mutation($id:ID!){
+  convertPullRequestToDraft(input:{pullRequestId:$id}){ pullRequest{ id isDraft } }
+}
+"""
+
+_MARK_READY_FOR_REVIEW_MUTATION = """
+mutation($id:ID!){
+  markPullRequestReadyForReview(input:{pullRequestId:$id}){ pullRequest{ id isDraft } }
+}
+"""
+
+
+@_audit_log
+async def gh_pr_set_draft(args: PrSetDraftArgs) -> str:
+    """Convert a pull request to draft, or mark it ready for review.
+
+    The REST ``PATCH /pulls/{number}`` endpoint has no ``draft`` field, so this
+    goes through the ``convertPullRequestToDraft``/``markPullRequestReadyForReview``
+    GraphQL mutations, using the PR's ``node_id`` from a REST lookup.
+    """
+    repo = args.repo
+    pr = args.pr
+    validate_repo(repo)
+    pr_resp = await gh_request("GET", f"repos/{repo}/pulls/{pr}")
+    node_id = pr_resp.json().get("node_id")
+    if not node_id:
+        raise GhError("Pull request node id unavailable")
+
+    mutation = _CONVERT_TO_DRAFT_MUTATION if args.draft else _MARK_READY_FOR_REVIEW_MUTATION
+    resp = await gh_request(
+        "POST", "graphql", json={"query": mutation, "variables": {"id": node_id}}
+    )
     return json.dumps(resp.json())
 
 
