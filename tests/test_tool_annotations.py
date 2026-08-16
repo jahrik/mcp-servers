@@ -68,6 +68,11 @@ EXPECTED_MAPS = {
             "openWorldHint": True,
             "readOnlyHint": False,
         },
+        "gh_pr_set_draft": {
+            "destructiveHint": False,
+            "openWorldHint": True,
+            "readOnlyHint": False,
+        },
         "gh_repo_get": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_repo_list": {"destructiveHint": False, "openWorldHint": True, "readOnlyHint": True},
         "gh_review_comment_reply": {

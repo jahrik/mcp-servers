@@ -78,6 +78,14 @@ class PrRequestReviewersArgs(BaseModel, frozen=True):
     )
 
 
+class PrSetDraftArgs(BaseModel, frozen=True):
+    repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
+    pr: int = Field(description="Pull request number.")
+    draft: bool = Field(
+        description="``True`` to convert the PR to a draft, ``False`` to mark it ready for review."
+    )
+
+
 class PrMergeArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     pr: int = Field(description="Pull request number.")
@@ -262,6 +270,27 @@ class ReviewCommentsListArgs(BaseModel, frozen=True):
     repo: str = Field(pattern=_REPO_PATTERN, description="Repository as ``owner/name``.")
     pr: int = Field(description="Pull request number.")
     bot_only: bool = Field(False, description="Keep only bot/Copilot comments.")
+    reviewer_login: str | None = Field(
+        None,
+        description="Keep only comments authored by this login (case-insensitive). Takes "
+        "precedence over ``bot_only`` when both are set.",
+    )
+    wait_for_completion: bool = Field(
+        False,
+        description="If true, poll until at least one matching comment appears (or the "
+        "timeout is hit) instead of returning a single snapshot.",
+    )
+    timeout_seconds: int = Field(
+        300,
+        ge=1,
+        le=1800,
+        description="Maximum time to poll when ``wait_for_completion`` is true (1-1800s).",
+    )
+    poll_interval_seconds: int = Field(
+        15,
+        ge=1,
+        description="Delay between polls when ``wait_for_completion`` is true.",
+    )
 
 
 class ReviewThreadsGetArgs(BaseModel, frozen=True):
@@ -269,6 +298,27 @@ class ReviewThreadsGetArgs(BaseModel, frozen=True):
     pr: int = Field(description="Pull request number.")
     bot_only: bool = Field(
         False, description="Keep only threads that contain a bot/Copilot comment."
+    )
+    reviewer_login: str | None = Field(
+        None,
+        description="Keep only threads with a comment authored by this login (case-insensitive). "
+        "Takes precedence over ``bot_only`` when both are set.",
+    )
+    wait_for_completion: bool = Field(
+        False,
+        description="If true, poll until at least one matching thread appears (or the "
+        "timeout is hit) instead of returning a single snapshot.",
+    )
+    timeout_seconds: int = Field(
+        300,
+        ge=1,
+        le=1800,
+        description="Maximum time to poll when ``wait_for_completion`` is true (1-1800s).",
+    )
+    poll_interval_seconds: int = Field(
+        15,
+        ge=1,
+        description="Delay between polls when ``wait_for_completion`` is true.",
     )
 
 
