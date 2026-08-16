@@ -24,14 +24,13 @@ dependencies = [
 ]
 
 [project.scripts]
-# One console script per server. The ansible-ai-agents role registers these
+# One console script per active server. The ansible-ai-agents role registers these
 # as `type: stdio` MCP servers (command: mcp-github, etc.).
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"
 mcp-data = "mcp_servers.data.server:main"
-mcp-dispatcher = "mcp_servers.dispatcher.server:main"
-mcp-lsp = "mcp_servers.lsp.server:main"
-mcp-memory = "mcp_servers.memory.server:main"
+# dispatcher, lsp, and memory are archived (unused in production, source kept for
+# reference) — no console scripts, so `uv tool install` no longer builds their binaries.
 
 [dependency-groups]
 dev = [

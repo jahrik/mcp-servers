@@ -5,9 +5,9 @@ conventions.
 
 ## Purpose
 
-Curated, self-maintained MCP servers for AI coding agents. Each server is a subpackage
-under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow. See
-`README.md` for usage.
+Curated, self-maintained MCP servers for AI coding agents. Each active server is a
+subpackage under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
+See `README.md` for usage.
 
 ## Layout
 
@@ -16,9 +16,9 @@ src/mcp_servers/
 ├── github/           # GitHub App access (REST + GraphQL) → mcp-github
 ├── workspace/        # read-only local git surveys   → mcp-workspace
 ├── data/             # SQL over local files (DuckDB)  → mcp-data
-├── dispatcher/       # async agent job queue (pull)   → mcp-dispatcher
-├── lsp/              # LSP router + tree-sitter        → mcp-lsp
-└── memory/           # cross-session memory (DuckDB)   → mcp-memory
+├── dispatcher/       # archived: async agent job queue (pull), no console script
+├── lsp/              # archived: LSP router + tree-sitter, no console script
+└── memory/           # archived: cross-session memory (DuckDB), no console script
 tests/                # mirrors src/, per server
 docs/                 # one page per server
 .github/workflows/ci.yml

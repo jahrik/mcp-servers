@@ -1,8 +1,9 @@
-# dispatcher
+# dispatcher (archived)
+
+**Archived**: unused in production, dropped from `[project.scripts]`, and no longer
+registered with agents. Source kept for reference; nothing below is installed by default.
 
 Asynchronous agent-to-agent task delegation and orchestration: agents queue jobs for standing workers to pull and execute, with job state tracked in an SQLite database.
-
-Installed as `mcp-dispatcher`; registered as `dispatcher`.
 
 ## Tools
 
