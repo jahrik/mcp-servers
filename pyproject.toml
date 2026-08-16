@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-# One console script per server. The ansible-ai-agents role registers these
+# One console script per active server. The ansible-ai-agents role registers these
 # as `type: stdio` MCP servers (command: mcp-github, etc.).
 mcp-github = "mcp_servers.github.server:main"
 mcp-workspace = "mcp_servers.workspace.server:main"

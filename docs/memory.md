@@ -1,10 +1,11 @@
-# memory
+# memory (archived)
+
+**Archived**: unused in production, dropped from `[project.scripts]`, and no longer
+registered with agents. Source kept for reference; nothing below is installed by default.
 
 Persistent, cross-session long-term memory for AI agents: store facts, preferences, project
 notes, and instructions, then recall them in later sessions. Backed by a DuckDB database at
 `~/.mcp/memory.db` and usable by both Claude Code and Antigravity over stdio.
-
-Installed as `mcp-memory`; registered as `memory`.
 
 ## Behavior
 

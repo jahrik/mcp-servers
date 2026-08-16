@@ -5,8 +5,9 @@
 A small collection of focused, self-maintained [MCP](https://modelcontextprotocol.io)
 servers — curated tools for AI coding agents, kept deliberately narrow.
 
-Each server is a subpackage under `src/mcp_servers/` and ships its own console script,
-owning its own plumbing (HTTP client, validation, caching). One repo, one CI, one release.
+Each active server is a subpackage under `src/mcp_servers/` and ships its own console
+script, owning its own plumbing (HTTP client, validation, caching). One repo, one CI, one
+release.
 
 ## Servers
 

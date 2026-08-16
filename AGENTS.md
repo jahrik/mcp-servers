@@ -5,9 +5,9 @@ conventions.
 
 ## Purpose
 
-Curated, self-maintained MCP servers for AI coding agents. Each server is a subpackage
-under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow. See
-`README.md` for usage.
+Curated, self-maintained MCP servers for AI coding agents. Each active server is a
+subpackage under `src/mcp_servers/`, exposed as a console script, kept deliberately narrow.
+See `README.md` for usage.
 
 ## Layout
 

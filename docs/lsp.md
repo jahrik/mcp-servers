@@ -1,12 +1,13 @@
-# lsp
+# lsp (archived)
+
+**Archived**: unused in production, dropped from `[project.scripts]`, and no longer
+registered with agents. Source kept for reference; nothing below is installed by default.
 
 The `lsp` server fronts real Language Server Protocol processes (`ty` + `ruff` for Python,
 `gopls`, `rust-analyzer`, `typescript-language-server`) and exposes their semantic intelligence as MCP
 tools. Agents get IDE-grade answers about what a symbol *means* and connects to — resolving
 imports, types, and scope — without managing JSON-RPC lifecycles, subprocesses, or document
 syncing themselves.
-
-Installed as `mcp-lsp`; registered as `lsp`.
 
 The guiding split for agents: `rg` for text, `ts_*` for syntax structure (tree-sitter), and
 `lsp_*` for what a symbol *means*. Prefer `lsp_*` over grep whenever the question is semantic
