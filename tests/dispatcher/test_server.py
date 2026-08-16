@@ -133,7 +133,7 @@ def test_update_job_status_rejects_unknown_status() -> None:
     with pytest.raises(ValidationError):
         UpdateJobStatusArgs(
             job_id="00000000-0000-0000-0000-000000000000",
-            status="Bogus",  # ty: ignore[invalid-argument-type]
+            status="Bogus",
         )
 
 
