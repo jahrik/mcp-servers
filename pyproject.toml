@@ -10,7 +10,7 @@ dependencies = [
     "duckdb>=1.1.0",
     "httpx>=0.28.1",
     "jq>=1.11.0",
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2.0.0",
     "pyjwt>=2.13.0",
     # duckdb's Python API needs pytz to return TIMESTAMPTZ values
     "pytz>=2024.1",
